@@ -1,0 +1,17 @@
+node_modules
+.next
+.git
+.gitignore
+dist
+.env
+.env.*
+!.env.example
+data
+tests
+coverage
+docs
+README.md
+AGENTS.md
+*.log
+*.tsbuildinfo
+public/vendor

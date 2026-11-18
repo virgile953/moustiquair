@@ -1,0 +1,244 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-brand-50: #fdf3f0;
+  --color-brand-100: #fbe4de;
+  --color-brand-200: #f7c9be;
+  --color-brand-300: #f0a292;
+  --color-brand-400: #e57460;
+  --color-brand-500: #d94b38;
+  --color-brand-600: #c03a29;
+  --color-brand-700: #9e2f22;
+  --color-brand-800: #822b22;
+  --color-brand-900: #6d281f;
+  --font-sans: var(--font-manrope), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-instrument), ui-serif, Georgia, serif;
+  --radius-sm: calc(var(--radius) - 6px);
+  --radius-md: calc(var(--radius) - 3px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 10px);
+}
+
+:root {
+  --radius: 0.9rem;
+  --background: #faf8f4;
+  --foreground: #211d19;
+  --card: #fffdf9;
+  --card-foreground: #211d19;
+  --popover: #fffdf9;
+  --popover-foreground: #211d19;
+  --primary: #d94b38;
+  --primary-foreground: #fff9f6;
+  --secondary: #f3ece3;
+  --secondary-foreground: #3c342c;
+  --muted: #f4efe8;
+  --muted-foreground: #756b60;
+  --accent: #fbe7e1;
+  --accent-foreground: #8f2d20;
+  --destructive: #b42318;
+  --border: #e7ddd1;
+  --input: #e7ddd1;
+  --ring: #d94b38;
+  --chart-1: #e57460;
+  --chart-2: #d94b38;
+  --chart-3: #9e2f22;
+  --chart-4: #c9a227;
+  --chart-5: #5f7f6a;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "ss01", "cv11";
+  }
+
+  ::selection {
+    background: #f7c9be;
+    color: #6d281f;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  .text-pretty {
+    text-wrap: pretty;
+  }
+
+  .map-panel {
+    background: color-mix(in srgb, var(--card) 92%, transparent);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+  }
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}
+
+/* MapLibre controls: style them to match the application instead of the
+   default square white buttons. */
+.maplibregl-ctrl-group {
+  border-radius: 14px !important;
+  overflow: hidden;
+  box-shadow:
+    0 12px 30px -18px rgb(33 29 25 / 0.55),
+    0 2px 8px rgb(33 29 25 / 0.08) !important;
+  border: 1px solid #e7ddd1;
+}
+
+.maplibregl-ctrl-group button {
+  width: 38px !important;
+  height: 38px !important;
+}
+
+.maplibregl-ctrl-group button + button {
+  border-top: 1px solid #eee5db !important;
+}
+
+.maplibregl-ctrl-attrib {
+  background: rgb(250 248 244 / 0.86) !important;
+  border-radius: 8px 0 0 0;
+  font-size: 10px !important;
+}
+
+.maplibregl-ctrl-attrib a {
+  color: #5c5349 !important;
+}
+
+.maplibregl-popup-content {
+  border-radius: 16px !important;
+  box-shadow: 0 20px 45px -25px rgb(33 29 25 / 0.55) !important;
+  padding: 12px 14px !important;
+  font-family: var(--font-sans);
+}
+
+.maplibregl-popup-close-button {
+  font-size: 18px;
+  padding: 4px 8px;
+}
+
+/* Report marker: a coral teardrop with a soft pulse at the exact point. */
+.moustiquair-marker {
+  position: relative;
+  width: 30px;
+  height: 40px;
+  cursor: grab;
+}
+
+.moustiquair-marker:active {
+  cursor: grabbing;
+}
+
+.moustiquair-marker__pin {
+  position: absolute;
+  bottom: 2px;
+  left: 50%;
+  width: 28px;
+  height: 28px;
+  transform: translateX(-50%) rotate(45deg);
+  border: 2.5px solid #fffdf9;
+  border-radius: 50% 50% 50% 0;
+  background: #d94b38;
+  box-shadow: 0 10px 22px -10px rgb(109 40 31 / 0.9);
+}
+
+.moustiquair-marker__pin::after {
+  content: "";
+  position: absolute;
+  inset: 7px;
+  border-radius: 9999px;
+  background: #fffdf9;
+}
+
+.moustiquair-marker__pulse {
+  position: absolute;
+  bottom: -4px;
+  left: 50%;
+  width: 16px;
+  height: 16px;
+  transform: translateX(-50%);
+  border-radius: 9999px;
+  background: rgb(217 75 56 / 0.3);
+  animation: moustiquair-pulse 1.9s ease-out infinite;
+}
+
+@keyframes moustiquair-pulse {
+  0% {
+    transform: translateX(-50%) scale(0.6);
+    opacity: 0.8;
+  }
+  75% {
+    transform: translateX(-50%) scale(2.1);
+    opacity: 0;
+  }
+  100% {
+    transform: translateX(-50%) scale(2.1);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .moustiquair-marker__pulse {
+    animation: none;
+    opacity: 0.45;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
