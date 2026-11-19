@@ -176,7 +176,7 @@ export function MapSidebar({
   onClose,
 }: MapSidebarProps) {
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full min-h-0 flex-col">
       <div className="flex items-start justify-between gap-3 border-b border-border/80 px-5 py-4">
         <div>
           <p className="text-[0.66rem] font-bold tracking-[0.14em] text-primary uppercase">
@@ -199,7 +199,7 @@ export function MapSidebar({
         ) : null}
       </div>
 
-      <div className="no-scrollbar flex-1 space-y-6 overflow-y-auto px-5 py-5">
+      <div className="no-scrollbar min-h-0 flex-1 space-y-6 overflow-y-auto px-5 py-5">
         <section>
           <Label htmlFor="activity-period" className="text-xs font-bold tracking-wide uppercase">
             Période d&apos;observation

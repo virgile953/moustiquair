@@ -537,7 +537,7 @@ export function MapExperience({
             role="dialog"
             aria-modal="true"
             aria-label="Légende et réglages de la carte"
-            className="absolute inset-x-0 bottom-0 max-h-[82dvh] overflow-hidden rounded-t-[1.5rem] border border-border bg-card shadow-[0_-20px_60px_-25px_rgba(33,29,25,0.5)] animate-in slide-in-from-bottom duration-250"
+            className="absolute inset-x-0 bottom-0 flex h-[82dvh] max-h-[44rem] flex-col overflow-hidden rounded-t-[1.5rem] border border-border bg-card shadow-[0_-20px_60px_-25px_rgba(33,29,25,0.5)] animate-in slide-in-from-bottom duration-250"
           >
             <MapSidebar
               city={city}
