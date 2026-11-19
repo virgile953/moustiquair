@@ -174,7 +174,7 @@ export function GET(request: NextRequest) {
     headers: {
       "Cache-Control": wantsTeacherView
         ? "private, no-store"
-        : "public, max-age=15, stale-while-revalidate=30",
+        : "public, max-age=60, stale-while-revalidate=120",
       Vary: "Cookie",
     },
   });

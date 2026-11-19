@@ -35,7 +35,9 @@ export function GET(request: NextRequest) {
   const stats = getStats(period, teacherView, selection.city.insee);
   return NextResponse.json(stats, {
     headers: {
-      "Cache-Control": teacherView ? "private, no-store" : "no-store",
+      "Cache-Control": teacherView
+        ? "private, no-store"
+        : "public, max-age=30, stale-while-revalidate=60",
       Vary: "Cookie",
     },
   });

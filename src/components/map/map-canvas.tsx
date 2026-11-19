@@ -322,19 +322,23 @@ export function MapCanvas({
       // Turbopack does not emit MapLibre's worker chunk in a location the
       // browser can load. `scripts/copy-maplibre-worker.ts` copies the official
       // worker to `public/vendor`, and we point MapLibre at it explicitly.
-      maplibregl.setWorkerUrl("/vendor/maplibre-gl-worker.mjs");
+      // The version query lets `next.config.ts` cache the file immutably while
+      // still fetching a fresh worker after a MapLibre upgrade.
+      maplibregl.setWorkerUrl(`/vendor/maplibre-gl-worker.mjs?v=${maplibregl.getVersion()}`);
 
-      // Sanity-check the style before creating the map, so a failed request
-      // can fall back to the second free style instead of showing a blank map.
-      let styleUrl = POSITRON_STYLE;
+      // Fetch the style once and hand the parsed object to MapLibre. Passing a
+      // URL would make MapLibre download the very same style a second time.
+      // A small preflight still gives us a clean fallback to Liberty.
+      let style: string | import("maplibre-gl").StyleSpecification = POSITRON_STYLE;
       try {
         const response = await fetch(POSITRON_STYLE, { cache: "force-cache" });
         if (!response.ok) throw new Error("Positron unavailable");
+        style = (await response.json()) as import("maplibre-gl").StyleSpecification;
       } catch {
-        styleUrl = LIBERTY_STYLE;
         try {
           const response = await fetch(LIBERTY_STYLE, { cache: "force-cache" });
           if (!response.ok) throw new Error("Liberty unavailable");
+          style = (await response.json()) as import("maplibre-gl").StyleSpecification;
         } catch {
           callbacksRef.current.onFatalError(
             "Le fond de carte est indisponible. Vérifiez votre connexion puis rechargez la page.",
@@ -347,13 +351,13 @@ export function MapCanvas({
 
       const map = new maplibregl.Map({
         container,
-        style: styleUrl,
+        style,
         center: initialFocus
           ? [initialFocus.longitude, initialFocus.latitude]
           : [city.center.longitude, city.center.latitude],
         zoom: initialFocus ? 16.2 : 13.1,
         minZoom: 10,
-        maxZoom: 19,
+        maxZoom: 18,
         dragRotate: false,
         pitchWithRotate: false,
         touchPitch: false,
@@ -448,7 +452,7 @@ export function MapCanvas({
 
       map.on("moveend", () => {
         if (fetchTimerRef.current) clearTimeout(fetchTimerRef.current);
-        fetchTimerRef.current = setTimeout(updateViewport, 260);
+        fetchTimerRef.current = setTimeout(updateViewport, 380);
       });
 
       map.on("click", (event) => {
@@ -541,8 +545,8 @@ export function MapCanvas({
 
     const bbox = boundaryBbox(boundary);
     map.setMaxBounds([
-      [bbox.minLon - 0.07, bbox.minLat - 0.05],
-      [bbox.maxLon + 0.07, bbox.maxLat + 0.05],
+      [bbox.minLon - 0.015, bbox.minLat - 0.012],
+      [bbox.maxLon + 0.015, bbox.maxLat + 0.012],
     ]);
 
     if (fittedCityRef.current !== city.insee) {
