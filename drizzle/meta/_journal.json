@@ -8,6 +8,13 @@
       "when": 1795041990719,
       "tag": "0000_tough_banshee",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1795045588263,
+      "tag": "0001_soft_senator_kelly",
+      "breakpoints": true
     }
   ]
 }

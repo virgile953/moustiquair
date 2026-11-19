@@ -3,7 +3,7 @@
 import type { FeatureCollection, MultiPolygon, Polygon } from "geojson";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { useEffect, useRef, useState } from "react";
-
+import type { City } from "@/lib/cities";
 import {
   type DisplayResolution,
   INFLUENCE_RADIUS_METERS,
@@ -27,7 +27,7 @@ import {
 const POSITRON_STYLE = "https://tiles.openfreemap.org/styles/positron";
 const LIBERTY_STYLE = "https://tiles.openfreemap.org/styles/liberty";
 
-const BOUNDARY_SOURCE = "herblay-boundary";
+const BOUNDARY_SOURCE = "study-area-boundary";
 const ACTIVITY_SOURCE = "activity-cells";
 
 type BoundaryCollection = FeatureCollection<Polygon | MultiPolygon>;
@@ -37,6 +37,8 @@ export interface MapApi {
 }
 
 interface MapCanvasProps {
+  /** Selected municipality; the grid request and initial view follow it. */
+  city: City;
   period: PeriodValue;
   boundary: BoundaryCollection | null;
   overlayEnabled: boolean;
@@ -239,6 +241,7 @@ function ensureActivityLayers(map: import("maplibre-gl").Map) {
 }
 
 export function MapCanvas({
+  city,
   period,
   boundary,
   overlayEnabled,
@@ -266,7 +269,9 @@ export function MapCanvas({
   const abortRef = useRef<AbortController | null>(null);
   const fetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hoveredIdRef = useRef<string | null>(null);
-  const hasFittedRef = useRef(Boolean(initialFocus));
+  // City whose boundary has already been framed. Initial focus (admin locator)
+  // suppresses the initial automatic fit.
+  const fittedCityRef = useRef<string | null>(initialFocus ? city.insee : null);
 
   const callbacksRef = useRef({
     onCellSelect,
@@ -343,7 +348,9 @@ export function MapCanvas({
       const map = new maplibregl.Map({
         container,
         style: styleUrl,
-        center: initialFocus ? [initialFocus.longitude, initialFocus.latitude] : [2.1556, 49.0052],
+        center: initialFocus
+          ? [initialFocus.longitude, initialFocus.latitude]
+          : [city.center.longitude, city.center.latitude],
         zoom: initialFocus ? 16.2 : 13.1,
         minZoom: 10,
         maxZoom: 19,
@@ -415,14 +422,9 @@ export function MapCanvas({
         );
       };
 
-      if (boundaryRef.current && !hasFittedRef.current) {
-        hasFittedRef.current = true;
-        // Wait for the first render to settle before fitting.
-        requestAnimationFrame(() => fitBoundary(map));
-      }
-
       // The map must not wander far outside the municipality. Allow a small
-      // margin so the outline and edge cells remain visible.
+      // margin so the outline and edge cells remain visible. Updated again when
+      // the boundary for another city arrives.
       const collection = boundaryRef.current;
       if (collection) {
         const bbox = boundaryBbox(collection);
@@ -528,7 +530,9 @@ export function MapCanvas({
     };
   }, []);
 
-  // Boundary data arrives after the map starts. Add it and fit only once.
+  // Boundary data arrives after the map starts. The map instance is reused:
+  // the GeoJSON source is updated, max bounds follow the new commune, and the
+  // view is refitted whenever the selected city changes.
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapLoaded || !boundary) return;
@@ -541,8 +545,8 @@ export function MapCanvas({
       [bbox.maxLon + 0.07, bbox.maxLat + 0.05],
     ]);
 
-    if (!hasFittedRef.current) {
-      hasFittedRef.current = true;
+    if (fittedCityRef.current !== city.insee) {
+      fittedCityRef.current = city.insee;
       const panelPadding = window.innerWidth >= 1024 ? 430 : 56;
       map.fitBounds(
         [
@@ -556,7 +560,7 @@ export function MapCanvas({
         },
       );
     }
-  }, [boundary, mapLoaded]);
+  }, [boundary, mapLoaded, city.insee]);
 
   // Toggle grid borders without touching the activity data.
   useEffect(() => {
@@ -580,6 +584,10 @@ export function MapCanvas({
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapLoaded) return;
+
+    // A city change starts a fit animation. Waiting for `moveend` avoids
+    // requesting the new city with the previous city's viewport.
+    if (map.isMoving()) return;
 
     if (!overlayEnabled) {
       setSourceData(map, ACTIVITY_SOURCE, EMPTY_ACTIVITY);
@@ -617,6 +625,7 @@ export function MapCanvas({
       bbox,
       period,
       resolution: String(resolution),
+      city: city.insee,
     });
     if (teacherView) params.set("view", "full");
 
@@ -658,7 +667,16 @@ export function MapCanvas({
       clearTimeout(timer);
       controller.abort();
     };
-  }, [mapLoaded, overlayEnabled, period, resolution, viewportNonce, teacherView, refreshToken]);
+  }, [
+    mapLoaded,
+    overlayEnabled,
+    period,
+    resolution,
+    viewportNonce,
+    teacherView,
+    refreshToken,
+    city.insee,
+  ]);
 
   // Selection outline. Clear the previous id before setting the new one.
   // biome-ignore lint/correctness/useExhaustiveDependencies: resolution changes replace the GeoJSON source.
@@ -735,7 +753,7 @@ export function MapCanvas({
         ref={containerRef}
         className="h-full w-full"
         role="application"
-        aria-label="Carte de l'activité du moustique tigre à Herblay-sur-Seine"
+        aria-label={`Carte de l'activité du moustique tigre à ${city.name}`}
       />
     </div>
   );

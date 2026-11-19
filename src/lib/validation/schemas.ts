@@ -52,6 +52,9 @@ export const sightingSubmissionSchema = z.object({
   // Honeypot: invisible to humans, filled by naive bots. The route returns a
   // fake success without storing anything when this field is non-empty.
   website: z.string().max(200).optional().default(""),
+  // Optional target commune. It is only a hint until the route validates it
+  // against the supported-city catalog; an unknown code is rejected.
+  cityInsee: z.string().trim().max(10).optional(),
 });
 
 export type SightingSubmission = z.infer<typeof sightingSubmissionSchema>;

@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import type { City } from "@/lib/cities";
 
 /**
  * Teacher login.
@@ -15,7 +16,7 @@ import { Label } from "@/components/ui/label";
  * The password is never checked here: the form posts it to the server, which
  * verifies the scrypt hash and creates an HttpOnly session cookie.
  */
-export function AdminLogin() {
+export function AdminLogin({ city }: { city: City }) {
   const router = useRouter();
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -66,7 +67,7 @@ export function AdminLogin() {
             Espace enseignant
           </Badge>
           <span className="text-xs font-medium text-muted-foreground">
-            Herblay-sur-Seine · 95306
+            {city.name} · {city.insee}
           </span>
         </div>
 
@@ -76,8 +77,9 @@ export function AdminLogin() {
           </span>
           <h1 className="mt-4 text-2xl font-extrabold tracking-tight">Connexion à la modération</h1>
           <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-            Cet espace permet de valider les signalements et de gérer les données de démonstration.
-            Il est réservé à l&apos;enseignant responsable du projet.
+            Cet espace permet de valider les signalements de {city.name} et de gérer les données de
+            démonstration de cette commune. Il est réservé à l&apos;enseignant responsable du
+            projet.
           </p>
 
           <form className="mt-6" onSubmit={handleSubmit}>

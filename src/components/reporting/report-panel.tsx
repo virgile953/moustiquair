@@ -20,6 +20,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
+import type { City } from "@/lib/cities";
 import {
   MAX_NOTES_LENGTH,
   MOSQUITO_COUNT_OPTIONS,
@@ -33,6 +34,7 @@ import { parisDateKey } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
 interface ReportPanelProps {
+  city: City;
   open: boolean;
   /** Kept mounted but visually hidden while the user picks a point on the map. */
   hidden: boolean;
@@ -53,6 +55,7 @@ function formatCoordinate(value: number, positive: string, negative: string): st
 }
 
 export function ReportPanel({
+  city,
   open,
   hidden,
   location,
@@ -132,7 +135,7 @@ export function ReportPanel({
     if (!location) {
       nextErrors.location = ["Choisissez un point sur la carte."];
     } else if (insideBoundary === false) {
-      nextErrors.location = ["Le point doit se trouver à Herblay-sur-Seine."];
+      nextErrors.location = [`Le point doit se trouver à ${city.name}.`];
     }
     if (!observedOn) {
       nextErrors.observedOn = ["La date est requise."];
@@ -156,6 +159,7 @@ export function ReportPanel({
         body: JSON.stringify({
           longitude: location?.longitude,
           latitude: location?.latitude,
+          cityInsee: city.insee,
           observedOn,
           mosquitoCount,
           reporterConfidence: confidence,
@@ -207,7 +211,7 @@ export function ReportPanel({
         <div className="flex items-start justify-between gap-4 border-b border-border/80 px-5 py-4">
           <div>
             <p className="text-[0.68rem] font-bold tracking-[0.14em] text-primary uppercase">
-              Observation citoyenne
+              Observation citoyenne · {city.name}
             </p>
             <h2 id="report-title" className="mt-1 text-xl font-extrabold tracking-tight">
               {success ? "Signalement envoyé" : "Signaler un moustique"}
@@ -226,7 +230,7 @@ export function ReportPanel({
             <div>
               <h3 className="text-lg font-bold">Merci pour votre contribution !</h3>
               <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-                Votre signalement est bien enregistré. Il est actuellement{" "}
+                Votre signalement à {city.name} est bien enregistré. Il est actuellement{" "}
                 <strong className="font-semibold text-foreground">en attente de modération</strong>{" "}
                 et n&apos;apparaîtra sur la carte qu&apos;après validation par un enseignant.
               </p>
@@ -290,7 +294,7 @@ export function ReportPanel({
                         </p>
                         {insideBoundary === false ? (
                           <p className="mt-1.5 text-xs font-medium text-red-700">
-                            Replacez le marqueur à l&apos;intérieur d&apos;Herblay-sur-Seine.
+                            Replacez le marqueur à l&apos;intérieur de {city.name}.
                           </p>
                         ) : null}
                       </div>
@@ -303,8 +307,8 @@ export function ReportPanel({
                       <div>
                         <p className="text-sm font-semibold">Aucun point choisi</p>
                         <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
-                          Placez le point le plus précisément possible, sans indiquer
-                          d&apos;adresse.
+                          Placez le point dans {city.name}, le plus précisément possible, sans
+                          indiquer d&apos;adresse.
                         </p>
                       </div>
                     </div>

@@ -11,11 +11,13 @@ import {
   RequestError,
   readJsonBody,
 } from "@/lib/api";
+import { CITY_COOKIE_NAME, type City, DEFAULT_CITY, getCityByInsee } from "@/lib/cities";
+import { readCookieValue } from "@/lib/city-selection";
 import { MAX_OBSERVATION_AGE_DAYS, type SightingStatus } from "@/lib/config/model";
 import { getDb } from "@/lib/db/client";
 import { sightings } from "@/lib/db/schema";
 import { isInsideBoundary } from "@/lib/geo/boundary";
-import { HERBLAY_BOUNDARY_GEOMETRY } from "@/lib/geo/herblay-boundary";
+import { getCityBoundaryGeometry } from "@/lib/geo/city-boundaries";
 import { projectSighting } from "@/lib/geo/projection";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { daysBetweenDateKeys, isFutureDateKey, parisDateKey, parisWallTimeToUtc } from "@/lib/time";
@@ -23,6 +25,25 @@ import { sightingSubmissionSchema } from "@/lib/validation/schemas";
 
 const REPORT_LIMIT = 5;
 const REPORT_WINDOW_MS = 15 * 60 * 1000;
+
+/**
+ * Resolve the target commune for a submission.
+ *
+ * The `city` query parameter wins, then the optional body field, then the
+ * persisted selection. Any explicit but unknown value is a hard error: we
+ * never accept an arbitrary city name.
+ */
+function resolveSubmissionCity(request: NextRequest, bodyCityInsee?: string): City | null {
+  const url = new URL(request.url);
+  const explicit = url.searchParams.get("city") ?? bodyCityInsee ?? null;
+
+  if (explicit !== null && explicit.trim().length > 0) {
+    return getCityByInsee(explicit.trim());
+  }
+
+  const cookieCity = readCookieValue(request.headers.get("cookie"), CITY_COOKIE_NAME);
+  return getCityByInsee(cookieCity) ?? DEFAULT_CITY;
+}
 
 /**
  * POST /api/sightings
@@ -72,6 +93,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const city = resolveSubmissionCity(request, input.cityInsee);
+    if (!city) {
+      return jsonError(400, "INVALID_CITY", "La commune demandée n'est pas prise en charge.");
+    }
+    const boundary = getCityBoundaryGeometry(city.insee);
+    if (!boundary) {
+      return jsonError(400, "INVALID_CITY", "La commune demandée n'est pas prise en charge.");
+    }
+
     const now = new Date();
     const today = parisDateKey(now);
 
@@ -100,11 +130,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!isInsideBoundary(input.longitude, input.latitude, HERBLAY_BOUNDARY_GEOMETRY)) {
+    if (!isInsideBoundary(input.longitude, input.latitude, boundary)) {
       return jsonError(
         422,
         "OUTSIDE_STUDY_AREA",
-        "Ce point se trouve en dehors de la commune d'Herblay-sur-Seine.",
+        `Ce point se trouve en dehors de la commune de ${city.name}.`,
         { location: ["Placez le point à l'intérieur de la commune."] },
       );
     }
@@ -129,6 +159,7 @@ export async function POST(request: NextRequest) {
       .insert(sightings)
       .values({
         id,
+        cityInsee: city.insee,
         longitude: input.longitude,
         latitude: input.latitude,
         projectedX: projected.projectedX,

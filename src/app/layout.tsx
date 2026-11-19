@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Instrument_Serif, Manrope } from "next/font/google";
 
 import { SiteHeader } from "@/components/site-header";
+import { getSelectedCity } from "@/lib/city-selection";
 
 import "./globals.css";
 
@@ -25,13 +26,13 @@ export const metadata: Metadata = {
     template: "%s · Moustiq'Air",
   },
   description:
-    "Projet citoyen de cartographie de l'activité du moustique tigre à Herblay-sur-Seine, pour les élèves de troisième.",
+    "Projet citoyen de cartographie de l'activité du moustique tigre dans plusieurs communes du Val-d'Oise, pour les élèves de troisième.",
   applicationName: "Moustiq'Air",
   authors: [{ name: "Projet pédagogique Moustiq'Air" }],
   keywords: [
     "moustique tigre",
     "Aedes albopictus",
-    "Herblay-sur-Seine",
+    "Val-d'Oise",
     "cartographie",
     "science participative",
   ],
@@ -44,7 +45,11 @@ export const viewport: Viewport = {
   maximumScale: 5,
 };
 
-export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+  // Reading the cookie makes the shell dynamic, which is required: the city
+  // selected in the URL or persisted in the cookie is visible on first paint.
+  const city = await getSelectedCity();
+
   return (
     <html lang="fr" className={`${manrope.variable} ${instrumentSerif.variable}`}>
       <body className="min-h-dvh font-sans">
@@ -54,7 +59,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
         >
           Aller au contenu principal
         </a>
-        <SiteHeader />
+        <SiteHeader city={city} />
         <div id="contenu">{children}</div>
       </body>
     </html>

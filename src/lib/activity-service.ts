@@ -14,7 +14,7 @@
 
 import { and, count, desc, eq, gte, lte } from "drizzle-orm";
 import type { Feature, FeatureCollection, Polygon } from "geojson";
-
+import { DEFAULT_CITY_INSEE } from "./cities";
 import {
   DEFAULT_PERIOD,
   INFLUENCE_RADIUS_METERS,
@@ -24,8 +24,8 @@ import {
 import { getDb } from "./db/client";
 import { sightings } from "./db/schema";
 import { isInsideBoundary } from "./geo/boundary";
+import { getCityBoundaryGeometry } from "./geo/city-boundaries";
 import { cellToGeoJSON } from "./geo/grid";
-import { HERBLAY_BOUNDARY_GEOMETRY } from "./geo/herblay-boundary";
 import { calculateActivityGrid } from "./geo/influence";
 import { formatActivityScore, getActivityLevel, normalizeActivityScore } from "./geo/intensity";
 import { lambert93ToLonLat } from "./geo/projection";
@@ -34,6 +34,8 @@ import { getPeriodStart } from "./time";
 
 export interface ActivityQuery {
   period?: PeriodValue;
+  /** INSEE code of the municipality being studied. */
+  cityInsee?: string;
   /** Display resolution in metres: 10, 50 or 100. */
   resolution?: number;
   /** Lambert-93 bounds of the viewport. */
@@ -60,9 +62,10 @@ function loadApprovedSightings(query: ActivityQuery) {
   const db = getDb();
   const period = query.period ?? DEFAULT_PERIOD;
   const resolution = query.resolution ?? 10;
+  const cityInsee = query.cityInsee ?? DEFAULT_CITY_INSEE;
   const start = getPeriodStart(period, query.now ?? new Date());
 
-  const conditions = [eq(sightings.status, "approved")];
+  const conditions = [eq(sightings.status, "approved"), eq(sightings.cityInsee, cityInsee)];
   if (start) conditions.push(gte(sightings.observedAt, start));
 
   if (query.bbox) {
@@ -92,10 +95,14 @@ function loadApprovedSightings(query: ActivityQuery) {
     .all();
 }
 
-/** A cell is displayed only when its centre belongs to Herblay-sur-Seine. */
-function isCellInStudyArea(cell: ActivityCell): boolean {
+/** A cell is displayed only when its centre belongs to the selected municipality. */
+function isCellInStudyArea(
+  cell: ActivityCell,
+  boundary: ReturnType<typeof getCityBoundaryGeometry>,
+): boolean {
+  if (!boundary) return false;
   const center = lambert93ToLonLat({ x: cell.centerX, y: cell.centerY });
-  return isInsideBoundary(center.longitude, center.latitude, HERBLAY_BOUNDARY_GEOMETRY);
+  return isInsideBoundary(center.longitude, center.latitude, boundary);
 }
 
 /**
@@ -107,8 +114,10 @@ function isCellInStudyArea(cell: ActivityCell): boolean {
 export function computeActivityCells(query: ActivityQuery = {}): ActivityCell[] {
   const resolution = query.resolution ?? 10;
   const includeUnpublished = query.includeUnpublished ?? false;
+  const cityInsee = query.cityInsee ?? DEFAULT_CITY_INSEE;
+  const boundary = getCityBoundaryGeometry(cityInsee);
 
-  const rows = loadApprovedSightings(query);
+  const rows = loadApprovedSightings({ ...query, cityInsee });
   const candidates = calculateActivityGrid(rows, {
     gridSize: 10,
     resolution,
@@ -118,7 +127,7 @@ export function computeActivityCells(query: ActivityQuery = {}): ActivityCell[] 
 
   return candidates.filter((cell) => {
     if (cell.score <= 0 || cell.contributingReports === 0) return false;
-    if (!isCellInStudyArea(cell)) return false;
+    if (!isCellInStudyArea(cell, boundary)) return false;
     if (!includeUnpublished && cell.contributingReports < PUBLIC_MIN_CONTRIBUTING_REPORTS) {
       return false;
     }
@@ -165,12 +174,14 @@ export interface ActivityOverview {
 export function computeActivityOverview(
   period: PeriodValue = DEFAULT_PERIOD,
   includeUnpublished = false,
+  cityInsee: string = DEFAULT_CITY_INSEE,
   now?: Date,
 ): ActivityOverview {
   const cells = computeActivityCells({
     period,
     resolution: 100,
     includeUnpublished,
+    cityInsee,
     now,
   });
 
@@ -208,16 +219,21 @@ export interface PublicStats {
 export function getStats(
   period: PeriodValue = DEFAULT_PERIOD,
   includeAdminCounts = false,
+  cityInsee: string = DEFAULT_CITY_INSEE,
   now: Date = new Date(),
 ): PublicStats {
   const db = getDb();
   const start = getPeriodStart(period, now);
+  const cityCondition = eq(sightings.cityInsee, cityInsee);
 
   const approvedTotal =
-    db.select({ value: count() }).from(sightings).where(eq(sightings.status, "approved")).get()
-      ?.value ?? 0;
+    db
+      .select({ value: count() })
+      .from(sightings)
+      .where(and(eq(sightings.status, "approved"), cityCondition))
+      .get()?.value ?? 0;
 
-  const approvedConditions = [eq(sightings.status, "approved")];
+  const approvedConditions = [eq(sightings.status, "approved"), cityCondition];
   if (start) approvedConditions.push(gte(sightings.observedAt, start));
 
   const approvedInPeriod =
@@ -230,12 +246,16 @@ export function getStats(
   const latestRow = db
     .select({ observedAt: sightings.observedAt })
     .from(sightings)
-    .where(eq(sightings.status, "approved"))
+    .where(and(eq(sightings.status, "approved"), cityCondition))
     .orderBy(desc(sightings.observedAt))
     .limit(1)
     .get();
 
-  const demoConditions = [eq(sightings.status, "approved"), eq(sightings.isDemo, true)];
+  const demoConditions = [
+    eq(sightings.status, "approved"),
+    eq(sightings.isDemo, true),
+    cityCondition,
+  ];
   const demoAllTime =
     db
       .select({ value: count() })
@@ -254,14 +274,20 @@ export function getStats(
   let rejectedCount: number | null = null;
   if (includeAdminCounts) {
     pendingCount =
-      db.select({ value: count() }).from(sightings).where(eq(sightings.status, "pending")).get()
-        ?.value ?? 0;
+      db
+        .select({ value: count() })
+        .from(sightings)
+        .where(and(eq(sightings.status, "pending"), cityCondition))
+        .get()?.value ?? 0;
     rejectedCount =
-      db.select({ value: count() }).from(sightings).where(eq(sightings.status, "rejected")).get()
-        ?.value ?? 0;
+      db
+        .select({ value: count() })
+        .from(sightings)
+        .where(and(eq(sightings.status, "rejected"), cityCondition))
+        .get()?.value ?? 0;
   }
 
-  const overview = computeActivityOverview(period, includeAdminCounts, now);
+  const overview = computeActivityOverview(period, includeAdminCounts, cityInsee, now);
 
   return {
     period,

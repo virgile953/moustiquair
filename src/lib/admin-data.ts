@@ -1,16 +1,18 @@
 /**
  * Queries used by the teacher interface.
  * These rows contain private data (coordinates, notes) and must never be sent
- * to a public endpoint.
+ * to a public endpoint. Every query is scoped to one supported commune.
  */
 
 import { and, count, desc, eq, type SQL } from "drizzle-orm";
+import { DEFAULT_CITY_INSEE } from "./cities";
 import type { SightingStatus } from "./config/model";
 import { getDb } from "./db/client";
 import { sightings } from "./db/schema";
 
 export interface AdminSighting {
   id: string;
+  cityInsee: string;
   longitude: number;
   latitude: number;
   observedAt: string;
@@ -31,19 +33,40 @@ export interface AdminSightingList {
   counts: Record<SightingStatus, number>;
 }
 
+function toAdminSighting(row: typeof sightings.$inferSelect): AdminSighting {
+  return {
+    id: row.id,
+    cityInsee: row.cityInsee,
+    longitude: row.longitude,
+    latitude: row.latitude,
+    observedAt: row.observedAt.toISOString(),
+    createdAt: row.createdAt.toISOString(),
+    mosquitoCount: row.mosquitoCount,
+    reporterConfidence: row.reporterConfidence,
+    notes: row.notes,
+    status: row.status,
+    isDemo: row.isDemo,
+    reviewedAt: row.reviewedAt?.toISOString() ?? null,
+  };
+}
+
 export function listSightings(options: {
   status?: AdminStatusFilter;
+  cityInsee?: string;
   limit?: number;
   offset?: number;
 }): AdminSightingList {
   const db = getDb();
   const status = options.status ?? "pending";
+  const cityInsee = options.cityInsee ?? DEFAULT_CITY_INSEE;
   const limit = Math.min(Math.max(options.limit ?? 100, 1), 200);
   const offset = Math.max(options.offset ?? 0, 0);
 
-  const conditions: SQL[] = [];
+  // The city filter is always applied: a teacher moderating Saint-Leu must
+  // never see (or count) Herblay reports.
+  const conditions: SQL[] = [eq(sightings.cityInsee, cityInsee)];
   if (status !== "all") conditions.push(eq(sightings.status, status));
-  const where = conditions.length > 0 ? and(...conditions) : undefined;
+  const where = and(...conditions);
 
   const rows = db
     .select()
@@ -59,6 +82,7 @@ export function listSightings(options: {
   const statusRows = db
     .select({ status: sightings.status, value: count() })
     .from(sightings)
+    .where(eq(sightings.cityInsee, cityInsee))
     .groupBy(sightings.status)
     .all();
 
@@ -72,49 +96,27 @@ export function listSightings(options: {
   }
 
   return {
-    items: rows.map((row) => ({
-      id: row.id,
-      longitude: row.longitude,
-      latitude: row.latitude,
-      observedAt: row.observedAt.toISOString(),
-      createdAt: row.createdAt.toISOString(),
-      mosquitoCount: row.mosquitoCount,
-      reporterConfidence: row.reporterConfidence,
-      notes: row.notes,
-      status: row.status,
-      isDemo: row.isDemo,
-      reviewedAt: row.reviewedAt?.toISOString() ?? null,
-    })),
+    items: rows.map(toAdminSighting),
     total,
     counts,
   };
 }
 
-export function reviewSighting(id: string, status: "approved" | "rejected"): AdminSighting | null {
+export function reviewSighting(
+  id: string,
+  status: "approved" | "rejected",
+  cityInsee: string = DEFAULT_CITY_INSEE,
+): AdminSighting | null {
   const db = getDb();
-  const existing = db.select().from(sightings).where(eq(sightings.id, id)).get();
+  const scopedWhere = and(eq(sightings.id, id), eq(sightings.cityInsee, cityInsee));
+  const existing = db.select().from(sightings).where(scopedWhere).get();
   if (!existing) return null;
 
   const now = new Date();
-  db.update(sightings)
-    .set({ status, reviewedAt: now, updatedAt: now })
-    .where(eq(sightings.id, id))
-    .run();
+  db.update(sightings).set({ status, reviewedAt: now, updatedAt: now }).where(scopedWhere).run();
 
-  const updated = db.select().from(sightings).where(eq(sightings.id, id)).get();
+  const updated = db.select().from(sightings).where(scopedWhere).get();
   if (!updated) return null;
 
-  return {
-    id: updated.id,
-    longitude: updated.longitude,
-    latitude: updated.latitude,
-    observedAt: updated.observedAt.toISOString(),
-    createdAt: updated.createdAt.toISOString(),
-    mosquitoCount: updated.mosquitoCount,
-    reporterConfidence: updated.reporterConfidence,
-    notes: updated.notes,
-    status: updated.status,
-    isDemo: updated.isDemo,
-    reviewedAt: updated.reviewedAt?.toISOString() ?? null,
-  };
+  return toAdminSighting(updated);
 }

@@ -4,13 +4,14 @@ import { NextResponse } from "next/server";
 import { activityCellsToFeatureCollection, computeActivityCells } from "@/lib/activity-service";
 import { jsonError } from "@/lib/api";
 import { getSessionFromRequest } from "@/lib/auth/session";
+import { selectCityFromRequest } from "@/lib/city-selection";
 import {
   DEFAULT_PERIOD,
   DISPLAY_RESOLUTIONS,
   isPeriodValue,
   type PeriodValue,
 } from "@/lib/config/model";
-import { HERBLAY_BOUNDARY_BBOX } from "@/lib/geo/herblay-boundary";
+import { getCityBoundingBox } from "@/lib/geo/city-boundaries";
 import { lonLatToLambert93 } from "@/lib/geo/projection";
 import type { LambertBounds } from "@/lib/geo/types";
 
@@ -21,8 +22,8 @@ const MAX_FEATURES = 25_000;
 /** Extra margin around the municipality in which viewports are accepted. */
 const STUDY_PADDING_DEGREES = 0.02;
 /**
- * The map is bounded to Herblay-sur-Seine. A viewport wider than half a degree
- * (about 55 km) is necessarily a malformed or abusive request, not a map view.
+ * The map is bounded to one commune at a time. A viewport wider than half a
+ * degree (about 55 km) is necessarily a malformed or abusive request.
  */
 const MAX_BBOX_SPAN_DEGREES = 0.5;
 
@@ -59,11 +60,11 @@ function bboxToLambert(bounds: GeographicBbox): LambertBounds {
 }
 
 /**
- * GET /api/map/grid?bbox=west,south,east,north&period=30&resolution=10
+ * GET /api/map/grid?bbox=west,south,east,north&period=30&resolution=10&city=95306
  *
  * Returns only cells that:
  * - have a positive modelled activity,
- * - are centred inside Herblay-sur-Seine,
+ * - are centred inside the selected commune,
  * - pass the public privacy threshold (unless a teacher asks for the full view).
  *
  * The response never contains individual sighting coordinates or report IDs.
@@ -74,6 +75,16 @@ export function GET(request: NextRequest) {
   const rawPeriod = url.searchParams.get("period") ?? DEFAULT_PERIOD;
   const rawResolution = url.searchParams.get("resolution") ?? "10";
   const wantsTeacherView = url.searchParams.get("view") === "full";
+
+  const selection = selectCityFromRequest(request);
+  if (selection.invalidQuery) {
+    return jsonError(400, "INVALID_CITY", "La commune demandée n'est pas prise en charge.");
+  }
+  const city = selection.city;
+  const study = getCityBoundingBox(city.insee);
+  if (!study) {
+    return jsonError(400, "INVALID_CITY", "La commune demandée n'est pas prise en charge.");
+  }
 
   const bbox = parseBbox(rawBbox);
   if (!bbox) {
@@ -91,7 +102,7 @@ export function GET(request: NextRequest) {
     return jsonError(
       400,
       "BBOX_TOO_LARGE",
-      "La zone demandée est trop étendue. Zoomez sur Herblay-sur-Seine.",
+      `La zone demandée est trop étendue. Zoomez sur ${city.name}.`,
     );
   }
 
@@ -115,7 +126,6 @@ export function GET(request: NextRequest) {
 
   // Restrict the requested viewport to the study area (with a small margin for
   // map padding). Cells outside the commune are filtered out later anyway.
-  const study = HERBLAY_BOUNDARY_BBOX;
   const clipped: GeographicBbox = {
     minLon: Math.max(bbox.minLon, study.minLon - STUDY_PADDING_DEGREES),
     minLat: Math.max(bbox.minLat, study.minLat - STUDY_PADDING_DEGREES),
@@ -126,7 +136,7 @@ export function GET(request: NextRequest) {
     return jsonError(
       400,
       "OUTSIDE_STUDY_AREA",
-      "La zone demandée ne recoupe pas le territoire d'Herblay-sur-Seine.",
+      `La zone demandée ne recoupe pas le territoire de ${city.name}.`,
     );
   }
 
@@ -147,6 +157,7 @@ export function GET(request: NextRequest) {
     resolution,
     bbox: lambertBbox,
     includeUnpublished,
+    cityInsee: city.insee,
   });
 
   if (cells.length > MAX_FEATURES) {
@@ -164,6 +175,7 @@ export function GET(request: NextRequest) {
       "Cache-Control": wantsTeacherView
         ? "private, no-store"
         : "public, max-age=15, stale-while-revalidate=30",
+      Vary: "Cookie",
     },
   });
 }

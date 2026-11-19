@@ -21,6 +21,10 @@ export const sightings = sqliteTable(
     projectedX: real("projected_x").notNull(),
     projectedY: real("projected_y").notNull(),
 
+    // Supported study area (INSEE commune code). Existing rows default to
+    // Herblay when the multi-city migration is applied.
+    cityInsee: text("city_insee").notNull().default("95306"),
+
     // Observation day, stored at 12:00 Paris time.
     observedAt: integer("observed_at", { mode: "timestamp_ms" }).notNull(),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
@@ -46,6 +50,7 @@ export const sightings = sqliteTable(
   },
   (table) => [
     index("sightings_status_idx").on(table.status),
+    index("sightings_city_idx").on(table.cityInsee),
     index("sightings_observed_at_idx").on(table.observedAt),
     index("sightings_demo_idx").on(table.isDemo),
     index("sightings_projected_idx").on(table.projectedX, table.projectedY),

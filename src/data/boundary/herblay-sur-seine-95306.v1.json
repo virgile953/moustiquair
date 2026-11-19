@@ -7,7 +7,7 @@
     "region": "11",
     "source": "https://geo.api.gouv.fr/communes/95306?format=geojson&geometry=contour",
     "license": "Etalab 2.0 — geo.api.gouv.fr",
-    "retrievedAt": "2026-11-18T22:46:11.627Z",
+    "retrievedAt": "2026-11-18T23:45:21.174Z",
     "version": "1.0.0"
   },
   "geometry": {

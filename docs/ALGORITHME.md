@@ -50,7 +50,7 @@ Le problème est qu'un degré ne correspond pas à une distance fixe :
 
 - un degré de latitude vaut environ 111 km partout ;
 - un degré de longitude vaut environ 111 km à l'équateur, mais seulement environ
-  73 km à la latitude d'Herblay.
+  73 km à la latitude du Val-d'Oise.
 
 Calculer `sqrt(dx² + dy²)` directement en degrés donnerait donc une distance
 fausse. Pour faire de la géométrie en mètres, on projette les points dans le

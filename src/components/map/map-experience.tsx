@@ -22,6 +22,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ReportPanel } from "@/components/reporting/report-panel";
 import { Button } from "@/components/ui/button";
+import type { City } from "@/lib/cities";
 import { DEFAULT_PERIOD, type PeriodValue } from "@/lib/config/model";
 import type { BoundaryGeometry } from "@/lib/geo/boundary";
 import type { LonLat } from "@/lib/geo/types";
@@ -35,6 +36,8 @@ import type { ActivityLoadState, MapStats, SelectedCell } from "./types";
 type BoundaryCollection = FeatureCollection<Polygon | MultiPolygon>;
 
 interface MapExperienceProps {
+  /** Selected municipality; every request and every label is scoped to it. */
+  city: City;
   initialReportOpen?: boolean;
   /** Teacher mode asks the API for complete, unpublished model results. */
   teacher?: boolean;
@@ -116,6 +119,7 @@ function ControlButton({
 }
 
 export function MapExperience({
+  city,
   initialReportOpen = false,
   teacher = false,
   initialFocus = null,
@@ -147,17 +151,19 @@ export function MapExperience({
 
   const mapApiRef = useRef<MapApi | null>(null);
 
-  // Load the official commune boundary once from our local, versioned copy.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: boundaryNonce is a retry trigger.
+  // Load the official boundary of the selected commune from our local,
+  // versioned copy. The map instance itself is never recreated.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: boundaryNonce is a retry trigger, city.insee a reload trigger.
   useEffect(() => {
     const controller = new AbortController();
     setBoundaryError(null);
     void (async () => {
       try {
-        const response = await fetch("/api/map/boundary", {
+        const response = await fetch(`/api/map/boundary?city=${city.insee}`, {
           signal: controller.signal,
         });
-        if (!response.ok) throw new Error("La limite communale n'a pas pu être chargée.");
+        if (!response.ok)
+          throw new Error(`La limite communale de ${city.name} n'a pas pu être chargée.`);
         const data = (await response.json()) as BoundaryCollection;
         if (data?.type !== "FeatureCollection" || !Array.isArray(data.features)) {
           throw new Error("La limite communale reçue est invalide.");
@@ -166,19 +172,30 @@ export function MapExperience({
       } catch (error) {
         if (controller.signal.aborted) return;
         setBoundaryError(
-          error instanceof Error ? error.message : "La limite communale n'a pas pu être chargée.",
+          error instanceof Error
+            ? error.message
+            : `La limite communale de ${city.name} n'a pas pu être chargée.`,
         );
       }
     })();
     return () => controller.abort();
-  }, [boundaryNonce]);
+  }, [boundaryNonce, city.insee, city.name]);
 
-  // Public statistics for the selected period. Teacher mode also returns the
-  // moderation counts, which are never public.
+  // A city change invalidates the selected cell and any report marker placed
+  // in the previous municipality.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reset only on selection change.
+  useEffect(() => {
+    setSelectedCell(null);
+    setReportLocation(null);
+    setChoosingLocation(false);
+  }, [city.insee]);
+
+  // Public statistics for the selected period and commune. Teacher mode also
+  // returns the moderation counts, which are never public.
   useEffect(() => {
     const controller = new AbortController();
     setStatsError(null);
-    const params = new URLSearchParams({ period });
+    const params = new URLSearchParams({ period, city: city.insee });
     if (teacher) params.set("view", "full");
 
     void (async () => {
@@ -196,7 +213,7 @@ export function MapExperience({
       }
     })();
     return () => controller.abort();
-  }, [period, teacher]);
+  }, [period, teacher, city.insee]);
 
   // Let the header CTA reopen the panel even when the URL is already
   // /?signaler=1 (clicking the same link would not remount the page).
@@ -301,6 +318,7 @@ export function MapExperience({
       <div className="flex h-full">
         <div className="relative min-w-0 flex-1">
           <MapCanvas
+            city={city}
             period={period}
             boundary={boundary}
             overlayEnabled={overlayEnabled}
@@ -354,7 +372,7 @@ export function MapExperience({
           {/* Map controls */}
           <div className="absolute top-4 right-4 z-30 flex flex-col gap-2">
             <ControlButton
-              label="Recentrer sur Herblay-sur-Seine"
+              label={`Recentrer sur ${city.name}`}
               onClick={() => mapApiRef.current?.fitToStudyArea()}
             >
               <LocateFixed className="size-4.5" />
@@ -422,15 +440,21 @@ export function MapExperience({
                   <MapPinOff className="size-5" />
                 </div>
                 <p className="mt-2.5 text-sm font-bold">
-                  Aucune activité publiée pour cette période
+                  Aucune activité publiée à {city.name} pour cette période
                 </p>
                 <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
                   Les signalements en attente de validation n&apos;apparaissent pas. Les zones sont
                   aussi masquées tant que moins de trois signalements validés s&apos;y recoupent.
                 </p>
                 <p className="mt-2 text-[0.68rem] text-muted-foreground">
-                  Essayez une période plus longue ou déplacez la carte.
+                  Essayez une période plus longue ou choisissez une autre commune.
                 </p>
+                {stats && !stats.demoActive ? (
+                  <p className="mt-2 text-[0.68rem] leading-relaxed text-muted-foreground">
+                    Aucune donnée de démonstration n&apos;est chargée pour {city.name}. Un
+                    enseignant peut en restaurer depuis l&apos;espace de modération.
+                  </p>
+                ) : null}
               </div>
             </div>
           ) : null}
@@ -481,6 +505,7 @@ export function MapExperience({
             className="hidden w-[382px] shrink-0 border-l border-border bg-card lg:block"
           >
             <MapSidebar
+              city={city}
               period={period}
               onPeriodChange={handlePeriodChange}
               overlayEnabled={overlayEnabled}
@@ -515,6 +540,7 @@ export function MapExperience({
             className="absolute inset-x-0 bottom-0 max-h-[82dvh] overflow-hidden rounded-t-[1.5rem] border border-border bg-card shadow-[0_-20px_60px_-25px_rgba(33,29,25,0.5)] animate-in slide-in-from-bottom duration-250"
           >
             <MapSidebar
+              city={city}
               period={period}
               onPeriodChange={handlePeriodChange}
               overlayEnabled={overlayEnabled}
@@ -555,6 +581,7 @@ export function MapExperience({
       ) : null}
 
       <ReportPanel
+        city={city}
         open={showReportAction && reportOpen}
         hidden={choosingLocation}
         location={reportLocation}

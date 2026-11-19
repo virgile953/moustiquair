@@ -23,6 +23,7 @@ import { InfluenceExplorer } from "@/components/education/influence-explorer";
 import { SiteFooter } from "@/components/site-footer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { DEFAULT_CITY_INSEE, SUPPORTED_CITIES, withCityQuery } from "@/lib/cities";
 import { GRID_SIZE_METERS, INFLUENCE_RADIUS_METERS } from "@/lib/config/model";
 
 export const metadata: Metadata = {
@@ -53,7 +54,7 @@ const MODEL_STEPS = [
   {
     icon: Grid3X3,
     title: "Découper le territoire",
-    text: "La commune est découpée en carrés de 10 mètres sur 10. Ce quadrillage commun permet de comparer tous les quartiers avec la même unité.",
+    text: "Chaque commune étudiée est découpée en carrés de 10 mètres sur 10. Ce quadrillage commun permet de comparer tous les quartiers avec la même unité.",
   },
   {
     icon: Ruler,
@@ -138,8 +139,8 @@ export default function ComprendrePage() {
               </h1>
               <p className="mt-5 max-w-2xl text-pretty text-base leading-relaxed text-muted-foreground sm:text-lg">
                 Moustiq&apos;Air transforme des observations citoyennes en une carte d&apos;activité
-                relative. Voici les hypothèses, les calculs et les limites qui se cachent derrière
-                chaque carré rouge.
+                relative, commune par commune dans le Val-d&apos;Oise. Voici les hypothèses, les
+                calculs et les limites qui se cachent derrière chaque carré rouge.
               </p>
               <div className="mt-7 flex flex-wrap gap-3">
                 <Button asChild>
@@ -182,6 +183,51 @@ export default function ComprendrePage() {
                 configuration du projet.
               </p>
             </aside>
+          </div>
+        </section>
+
+        {/* Communes couvertes */}
+        <section
+          aria-labelledby="communes-couvertes"
+          className="border-b border-border/70 bg-card/40"
+        >
+          <div className="mx-auto w-full max-w-6xl px-5 py-8 lg:px-8">
+            <div className="flex flex-wrap items-end justify-between gap-4">
+              <div>
+                <p className="text-[0.68rem] font-bold tracking-[0.14em] text-primary uppercase">
+                  Périmètre du projet
+                </p>
+                <h2 id="communes-couvertes" className="mt-1 text-xl font-extrabold tracking-tight">
+                  {SUPPORTED_CITIES.length} communes du Val-d&apos;Oise
+                </h2>
+                <p className="mt-1.5 max-w-2xl text-sm leading-relaxed text-muted-foreground">
+                  Chaque commune possède sa propre limite officielle, sa carte et ses statistiques.
+                  Utilisez le sélecteur de commune dans l&apos;en-tête pour passer de l&apos;une à
+                  l&apos;autre : les signalements, les zones actives et les chiffres ne sont jamais
+                  mélangés.
+                </p>
+              </div>
+              <Button asChild variant="outline" size="sm">
+                <Link href={withCityQuery("/", DEFAULT_CITY_INSEE)}>
+                  Explorer la carte
+                  <ArrowRight />
+                </Link>
+              </Button>
+            </div>
+            <ul className="mt-5 flex flex-wrap gap-2">
+              {SUPPORTED_CITIES.map((city) => (
+                <li key={city.insee}>
+                  <Link
+                    href={withCityQuery("/", city.insee)}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-3.5 py-2 text-xs font-semibold transition-colors hover:border-brand-200 hover:bg-brand-50 hover:text-brand-800"
+                  >
+                    <MapPinned className="size-3.5 text-primary" aria-hidden="true" />
+                    {city.name}
+                    <span className="font-normal text-muted-foreground">{city.insee}</span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
           </div>
         </section>
 

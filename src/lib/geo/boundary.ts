@@ -1,8 +1,9 @@
 /**
  * Administrative boundary helpers.
  *
- * The study area is the official commune boundary of Herblay-sur-Seine
- * (INSEE 95306), downloaded from geo.api.gouv.fr and stored locally.
+ * A study area is the official commune boundary of one supported city
+ * (see `src/lib/cities.ts`), downloaded from geo.api.gouv.fr and stored
+ * locally. The default remains Herblay-sur-Seine (INSEE 95306).
  *
  * This module only answers "is this point inside the commune?" and "what is
  * the bounding box?". It is intentionally independent from the mosquito

@@ -16,6 +16,9 @@ import { addDaysToDateKey, parisDateKey, parisWallTimeToUtc } from "@/lib/time";
 /** A point well inside Herblay-sur-Seine. */
 export const HERBLAY_CENTER = { longitude: 2.1556, latitude: 49.0052 };
 
+/** A point well inside Saint-Leu-la-Forêt (INSEE 95563). */
+export const SAINT_LEU_CENTER = { longitude: 2.243, latitude: 49.0211 };
+
 export function atNoonDaysAgo(daysAgo: number, now: Date = new Date()): Date {
   const key = addDaysToDateKey(parisDateKey(now), -daysAgo);
   return parisWallTimeToUtc(key, 12, 0);

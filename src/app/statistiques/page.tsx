@@ -17,6 +17,8 @@ import { SiteFooter } from "@/components/site-footer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { getStats } from "@/lib/activity-service";
+import { type City, withCityQuery } from "@/lib/cities";
+import { getSelectedCity } from "@/lib/city-selection";
 import { DEFAULT_PERIOD, isPeriodValue, PERIODS, type PeriodValue } from "@/lib/config/model";
 import { formatPercent } from "@/lib/geo/intensity";
 import { formatDateFr, formatShortDateFr, periodLabel } from "@/lib/time";
@@ -24,14 +26,17 @@ import { cn } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = {
-  title: "Statistiques",
-  description:
-    "Chiffres clés de Moustiq'Air : signalements validés, activité estimée et zones concernées à Herblay-sur-Seine.",
-};
-
 interface StatsPageProps {
-  searchParams: Promise<{ period?: string }>;
+  searchParams: Promise<{ period?: string; city?: string }>;
+}
+
+export async function generateMetadata({ searchParams }: StatsPageProps): Promise<Metadata> {
+  const params = await searchParams;
+  const city = await getSelectedCity(params.city);
+  return {
+    title: `Statistiques · ${city.name}`,
+    description: `Chiffres clés de Moustiq'Air à ${city.name} (${city.department}) : signalements validés, activité estimée et zones concernées.`,
+  };
 }
 
 function StatCard({
@@ -75,8 +80,9 @@ export default async function StatistiquesPage({ searchParams }: StatsPageProps)
   const params = await searchParams;
   const period: PeriodValue =
     params.period && isPeriodValue(params.period) ? params.period : DEFAULT_PERIOD;
+  const city: City = await getSelectedCity(params.city);
 
-  const stats = getStats(period, false);
+  const stats = getStats(period, false, city.insee);
   const demoShare =
     stats.approvedInPeriod > 0 ? stats.demoApprovedInPeriod / stats.approvedInPeriod : 0;
   const hasData = stats.approvedInPeriod > 0;
@@ -96,7 +102,7 @@ export default async function StatistiquesPage({ searchParams }: StatsPageProps)
           <div className="relative mx-auto w-full max-w-6xl px-5 py-14 lg:px-8 lg:py-20">
             <Badge variant="soft" className="mb-5">
               <BarChart3 className="size-3" aria-hidden="true" />
-              Chiffres clés · {periodLabel(period)}
+              {city.name} · {periodLabel(period)}
             </Badge>
             <h1 className="max-w-3xl text-balance text-4xl font-extrabold tracking-[-0.04em] sm:text-5xl">
               Les nombres derrière
@@ -104,7 +110,8 @@ export default async function StatistiquesPage({ searchParams }: StatsPageProps)
             </h1>
             <p className="mt-4 max-w-2xl text-pretty leading-relaxed text-muted-foreground">
               Ces indicateurs résument les signalements validés et l&apos;activité estimée par le
-              modèle. Ils ne représentent pas un comptage de moustiques.
+              modèle à {city.name} ({city.department}). Ils ne représentent pas un comptage de
+              moustiques.
             </p>
 
             <div
@@ -115,7 +122,7 @@ export default async function StatistiquesPage({ searchParams }: StatsPageProps)
               {PERIODS.map((option) => (
                 <Link
                   key={option.value}
-                  href={`/statistiques?period=${option.value}`}
+                  href={withCityQuery(`/statistiques?period=${option.value}`, city.insee)}
                   aria-current={option.value === period ? "page" : undefined}
                   className={cn(
                     "rounded-full px-3.5 py-2 text-xs font-semibold transition-colors",
@@ -137,15 +144,25 @@ export default async function StatistiquesPage({ searchParams }: StatsPageProps)
               <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-muted text-muted-foreground">
                 <MapPinned className="size-5" aria-hidden="true" />
               </div>
-              <h2 className="mt-3 text-lg font-extrabold">Aucune observation sur cette période</h2>
+              <h2 className="mt-3 text-lg font-extrabold">
+                Aucune observation à {city.name} sur cette période
+              </h2>
               <p className="mx-auto mt-2 max-w-lg text-sm leading-relaxed text-muted-foreground">
-                Aucun signalement validé n&apos;a été enregistré sur{" "}
+                Aucun signalement validé n&apos;a été enregistré à {city.name} sur{" "}
                 {periodLabel(period).toLowerCase()}. Essayez une période plus longue : les données
-                de démonstration couvrent les 90 derniers jours.
+                de démonstration, lorsqu&apos;elles sont chargées, couvrent les 90 derniers jours de
+                la commune sélectionnée.
               </p>
-              <Button asChild className="mt-5" variant="outline">
-                <Link href="/statistiques?period=all">Voir toute la période</Link>
-              </Button>
+              <div className="mt-5 flex flex-wrap justify-center gap-2">
+                <Button asChild variant="outline">
+                  <Link href={withCityQuery("/statistiques?period=all", city.insee)}>
+                    Voir toute la période
+                  </Link>
+                </Button>
+                <Button asChild variant="ghost">
+                  <Link href={withCityQuery("/", city.insee)}>Revenir à la carte</Link>
+                </Button>
+              </div>
             </div>
           ) : (
             <>
@@ -154,7 +171,7 @@ export default async function StatistiquesPage({ searchParams }: StatsPageProps)
                   icon={CheckCircle2}
                   label="Signalements validés"
                   value={String(stats.approvedInPeriod)}
-                  detail={`${periodLabel(period)} · ${stats.approvedTotal} au total`}
+                  detail={`${periodLabel(period)} · ${stats.approvedTotal} au total à ${city.name}`}
                   tone="brand"
                 />
                 <StatCard
@@ -260,7 +277,7 @@ export default async function StatistiquesPage({ searchParams }: StatsPageProps)
                     </li>
                   </ul>
                   <Button asChild variant="outline" size="sm" className="mt-4">
-                    <Link href="/comprendre">
+                    <Link href={withCityQuery("/comprendre", city.insee)}>
                       Comprendre le modèle
                       <ArrowRight />
                     </Link>

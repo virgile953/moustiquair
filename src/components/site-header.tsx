@@ -1,12 +1,14 @@
 "use client";
 
-import { MapPin, Menu, Plus, X } from "lucide-react";
+import { Menu, Plus, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { BrandMark } from "@/components/brand-mark";
+import { CitySelector } from "@/components/city-selector";
 import { Button } from "@/components/ui/button";
+import { type City, withCityQuery } from "@/lib/cities";
 import { cn } from "@/lib/utils";
 
 const NAVIGATION = [
@@ -15,9 +17,14 @@ const NAVIGATION = [
   { href: "/statistiques", label: "Statistiques" },
 ];
 
-export function SiteHeader() {
+interface SiteHeaderProps {
+  city: City;
+}
+
+export function SiteHeader({ city }: SiteHeaderProps) {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const reportHref = withCityQuery("/?signaler=1", city.insee);
 
   // Close the mobile menu after navigation.
   // biome-ignore lint/correctness/useExhaustiveDependencies: pathname is a navigation trigger.
@@ -76,15 +83,12 @@ export function SiteHeader() {
         </nav>
 
         <div className="ml-auto flex items-center gap-2.5">
-          <div className="hidden items-center gap-1.5 rounded-full border border-border/80 bg-card/70 px-3 py-2 text-[0.7rem] font-semibold text-muted-foreground xl:flex">
-            <MapPin className="size-3.5 text-primary" aria-hidden="true" />
-            <span>Herblay-sur-Seine</span>
-            <span className="text-border">·</span>
-            <span className="font-medium">Val-d&apos;Oise</span>
+          <div className="hidden lg:block">
+            <CitySelector selected={city} />
           </div>
 
           <Button asChild size="sm" className="hidden sm:inline-flex">
-            <Link href="/?signaler=1" onClick={handleReportClick}>
+            <Link href={reportHref} onClick={handleReportClick}>
               <Plus className="size-4" aria-hidden="true" />
               Signaler un moustique
             </Link>
@@ -126,15 +130,25 @@ export function SiteHeader() {
                 </Link>
               );
             })}
+            <div className="mt-3 px-1">
+              <label
+                htmlFor="city-selector-mobile"
+                className="mb-1.5 block text-[0.65rem] font-bold tracking-[0.12em] text-muted-foreground uppercase"
+              >
+                Commune étudiée
+              </label>
+              <CitySelector selected={city} tone="full" id="city-selector-mobile" />
+            </div>
             <Button asChild className="mt-3 sm:hidden">
-              <Link href="/?signaler=1" onClick={handleReportClick}>
+              <Link href={reportHref} onClick={handleReportClick}>
                 <Plus className="size-4" />
                 Signaler un moustique
               </Link>
             </Button>
             <div className="mt-3 flex items-center gap-1.5 px-4 text-xs font-medium text-muted-foreground">
-              <MapPin className="size-3.5 text-primary" />
-              Herblay-sur-Seine · Val-d&apos;Oise
+              <span>
+                {city.name} · {city.department} · INSEE {city.insee}
+              </span>
             </div>
           </nav>
         </div>

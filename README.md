@@ -1,15 +1,49 @@
 # Moustiq'Air
 
-Moustiq'Air is a small citizen-science web application for **Herblay-sur-Seine**
-(Val-d'Oise, INSEE **95306**). Year 10 students can report tiger-mosquito
-sightings, and the application turns validated reports into a red, relative
-activity layer on a MapLibre map.
+Moustiq'Air is a small citizen-science web application for **six communes of the
+Val-d'Oise**: Herblay-sur-Seine (INSEE **95306**, the default), Saint-Leu-la-Forêt
+(**95563**), Taverny (**95607**), Pierrelaye (**95488**), Cormeilles-en-Parisis
+(**95176**) and Franconville (**95252**). Year 10 students can report
+tiger-mosquito sightings for the selected commune, and the application turns
+validated reports into a red, relative activity layer on a MapLibre map.
 
 The project is deliberately a **proof of concept**, not a public-health
 surveillance system. A red cell means that several people reported mosquitoes
 nearby and that the model computes a higher relative observation activity. It
 does **not** count mosquitoes, measure a probability of infestation, or estimate
 a health risk.
+
+---
+
+## Supported communes and city selection
+
+Each city has its own map, boundary, activity grid, statistics and moderation
+queue. Reports from different communes are never merged.
+
+| INSEE   | Commune               | URL example    |
+| ------- | --------------------- | -------------- |
+| `95306` | Herblay-sur-Seine     | `/?city=95306` |
+| `95563` | Saint-Leu-la-Forêt    | `/?city=95563` |
+| `95607` | Taverny               | `/?city=95607` |
+| `95488` | Pierrelaye            | `/?city=95488` |
+| `95176` | Cormeilles-en-Parisis | `/?city=95176` |
+| `95252` | Franconville          | `/?city=95252` |
+
+Selection precedence is always **valid `?city=` query parameter → valid
+`moustiquair_city` cookie → Herblay-sur-Seine**. Unknown codes fall back safely
+on pages and return a JSON `400 INVALID_CITY` from the API.
+
+- `src/proxy.ts` copies a valid `?city=` into the request cookie, so the page
+  renders the right commune immediately without a redirect. The query parameter
+  stays in the URL, which keeps links shareable.
+- The response cookie is `moustiquair_city`, `Path=/`, `SameSite=Lax`,
+  one-year lifetime, **not HttpOnly**, because the header selector also writes
+  it from JavaScript when switching commune.
+- The selector preserves the current path and other query parameters such as
+  `period`, then pushes the new URL so server components re-render.
+
+Examples: `/?city=95563`, `/statistiques?period=90&city=95607`,
+`/admin?city=95488`.
 
 ---
 
@@ -26,6 +60,8 @@ a health risk.
   reports**, so a single isolated report cannot be located precisely.
 - A teacher-only view shows the complete model, including suppressed cells, for
   classroom demonstrations.
+- All of the above is computed **per commune**; the selected city is visible in
+  the header and can be changed at any time.
 
 The interface is in French. Source code, comments and technical documentation
 are in English, except `docs/ALGORITHME.md`, which is written in French for
@@ -62,8 +98,8 @@ cd moustiquair
 bun install
 cp .env.example .env
 bun run admin:hash      # choose a teacher password, then paste the line into .env
-bun run db:migrate      # create the SQLite schema
-bun run db:seed         # optional: load the reproducible demo dataset
+bun run db:migrate      # create or upgrade the SQLite schema
+bun run db:seed         # optional: load reproducible demo data for all six cities
 bun run dev
 ```
 
@@ -111,9 +147,14 @@ does both automatically on connection.
 ```bash
 bun run db:migrate     # apply migrations from ./drizzle
 bun run db:generate    # generate a migration after editing schema.ts
-bun run db:seed        # idempotently rebuild only the synthetic demo rows
+bun run db:seed        # idempotently rebuild synthetic demo rows for all cities
+bun run db:seed -- 95563  # only one commune (INSEE code)
 bun run db:reset-demo  # same operation, clearer name for demos
 ```
+
+The multi-city migration (`drizzle/0001_soft_senator_kelly.sql`) is additive: it
+adds `city_insee` with a default of `"95306"` and `sightings_city_idx`, so
+existing Herblay rows keep working without a data rewrite.
 
 The schema has three small tables:
 
@@ -122,6 +163,7 @@ The schema has three small tables:
 | Column                                 | Type                | Notes                                                             |
 | -------------------------------------- | ------------------- | ----------------------------------------------------------------- |
 | `id`                                   | text PK             | UUID for real reports, stable `demo-###` for demo data            |
+| `cityInsee`                            | text                | Supported INSEE code, default `"95306"`, indexed                  |
 | `longitude`, `latitude`                | real                | EPSG:4326 GPS coordinates                                         |
 | `projectedX`, `projectedY`             | real                | EPSG:2154 Lambert-93 metres, computed once at insertion           |
 | `observedAt`, `createdAt`, `updatedAt` | timestamp (ms, UTC) | Observation date is stored at 12:00 Europe/Paris converted to UTC |
@@ -132,8 +174,8 @@ The schema has three small tables:
 | `isDemo`                               | boolean             | Clearly separates synthetic rows                                  |
 | `reviewedAt`                           | timestamp nullable  | Set by moderation                                                 |
 
-Indexes cover status, observation date, demo flag and the projected coordinate
-pair used for map queries.
+Indexes cover status, city, observation date, demo flag and the projected
+coordinate pair used for map queries.
 
 ### `sessions`
 
@@ -150,18 +192,21 @@ information. The complete sightings table is never exposed by a public route.
 
 ### Demo dataset
 
-`bun run db:seed` creates exactly 129 reproducible synthetic sightings:
+`bun run db:seed` creates **129 reproducible synthetic sightings per supported
+commune** (774 rows in total), and `bun run db:seed -- <INSEE>` seeds only one
+commune. For each city:
 
 - 116 approved, 10 pending, 3 rejected;
 - five deliberately concentrated hotspots plus isolated observations;
 - observations spread across the previous 90 days;
 - varied mosquito-count and confidence categories;
-- five deliberate hotspots so the city-wide map is immediately meaningful;
-- fixed random seed (`20260921`) and deterministic IDs;
+- deterministic IDs (`demo-<INSEE>-###`), hotspots and random seed;
 - every row marked `isDemo = true`.
 
-Seeding first deletes **only demo rows**, then inserts the dataset again, so it
-is safe and idempotent. Real reports are never touched. The interface displays a
+Seeding first deletes **only demo rows of the selected city**, then inserts the
+dataset again, so it is safe and idempotent. Real reports and the other
+communes are never touched. The admin dashboard restores or deletes the demo
+data of the currently selected commune; the interface displays a
 `Données de démonstration` badge while demo rows exist.
 
 ---
@@ -178,18 +223,19 @@ bun test
 
 Useful routes:
 
-| Route           | Purpose                                                       |
-| --------------- | ------------------------------------------------------------- |
-| `/`             | Interactive activity map and report form                      |
-| `/comprendre`   | French educational explanation and interactive influence demo |
-| `/statistiques` | Aggregated public statistics                                  |
-| `/admin`        | Teacher login and moderation dashboard                        |
-| `/admin/carte`  | Teacher-only full model view                                  |
+| Route                      | Purpose                                                       |
+| -------------------------- | ------------------------------------------------------------- |
+| `/` or `/?city=95563`      | Interactive activity map and report form for one commune      |
+| `/comprendre`              | French educational explanation and interactive influence demo |
+| `/statistiques?city=95607` | Aggregated public statistics for the selected commune         |
+| `/admin?city=95488`        | Teacher login and city-scoped moderation dashboard            |
+| `/admin/carte?city=95488`  | Teacher-only full model view                                  |
 
-The map fits the official municipal boundary at startup. The boundary is stored
-locally in `src/data/boundary/herblay-sur-seine-95306.v1.json` and served by the
-application; it is not downloaded from `geo.api.gouv.fr` on each page load. The
-file can be refreshed with `bun run boundary:fetch`.
+The map fits the official boundary of the selected commune at startup. Boundaries
+are stored locally for all six cities in `src/data/boundary/*.v1.json` and served
+by `GET /api/map/boundary?city=…`; they are not downloaded from
+`geo.api.gouv.fr` on each page load. The files can be refreshed with
+`bun run boundary:fetch`.
 
 If MapLibre fails under Turbopack with `Worker failed to load`, run
 `bun run prepare:worker` and reload. `dev` and `build` already do this.
@@ -341,7 +387,7 @@ declared by the reporter, not verified by an entomologist.
   mutations, a CSRF header plus same-origin checks.
 - Passwords are scrypt-hashed. Login and reporting are rate-limited.
 - Honeypot, payload-size limits, enum validation, date validation and
-  municipality boundary validation reduce spam and invalid points.
+  selected-city boundary validation reduce spam and invalid points.
 - The teacher full view is for classroom instruction only. Do not project or
   share precise report locations, notes or demo-control screens.
 
@@ -370,24 +416,29 @@ All errors use a consistent JSON shape:
 { "error": { "code": "CODE", "message": "Message lisible", "details": {} } }
 ```
 
-| Method and route                                         | Access               | Purpose                                                |
-| -------------------------------------------------------- | -------------------- | ------------------------------------------------------ |
-| `GET /api/map/boundary`                                  | public               | Official municipality boundary as GeoJSON              |
-| `GET /api/map/grid?bbox=w,s,e,n&period=30&resolution=10` | public               | Activity cells; applies the 3-report privacy threshold |
-| `GET /api/map/grid?...&view=full`                        | teacher session      | Full model, including suppressed cells                 |
-| `GET /api/stats?period=30`                               | public               | Aggregates without private counts                      |
-| `GET /api/stats?period=30&view=full`                     | teacher session      | Adds pending/rejected counts and full-view indicators  |
-| `POST /api/sightings`                                    | public, rate-limited | Validate and persist a pending report                  |
-| `POST /api/admin/login`                                  | public, rate-limited | Verify password and create session                     |
-| `POST /api/admin/logout`                                 | teacher + CSRF       | Destroy session                                        |
-| `GET /api/admin/sightings?status=pending`                | teacher session      | Private moderation list                                |
-| `PATCH /api/admin/sightings/:id`                         | teacher + CSRF       | Approve or reject                                      |
-| `POST /api/admin/demo/seed`                              | teacher + CSRF       | Restore the demo dataset                               |
-| `DELETE /api/admin/demo`                                 | teacher + CSRF       | Delete demo rows only                                  |
+| Method and route                                                    | Access               | Purpose                                                 |
+| ------------------------------------------------------------------- | -------------------- | ------------------------------------------------------- |
+| `GET /api/map/boundary?city=95306`                                  | public               | Official boundary of the selected commune as GeoJSON    |
+| `GET /api/map/grid?bbox=w,s,e,n&period=30&resolution=10&city=95306` | public               | City-scoped activity cells; 3-report privacy threshold  |
+| `GET /api/map/grid?...&view=full`                                   | teacher session      | Full model, including suppressed cells                  |
+| `GET /api/stats?period=30&city=95306`                               | public               | City-scoped aggregates without private counts           |
+| `GET /api/stats?period=30&view=full`                                | teacher session      | Adds pending/rejected counts and full-view indicators   |
+| `POST /api/sightings?city=95306` (or body `cityInsee`)              | public, rate-limited | Validate against that city and persist a pending report |
+| `POST /api/admin/login`                                             | public, rate-limited | Verify password and create session                      |
+| `POST /api/admin/logout`                                            | teacher + CSRF       | Destroy session                                         |
+| `GET /api/admin/sightings?status=pending&city=95306`                | teacher session      | Private, city-scoped moderation list                    |
+| `PATCH /api/admin/sightings/:id?city=95306`                         | teacher + CSRF       | Approve or reject inside that city                      |
+| `POST /api/admin/demo/seed?city=95306`                              | teacher + CSRF       | Restore the demo dataset of one commune                 |
+| `DELETE /api/admin/demo?city=95306`                                 | teacher + CSRF       | Delete demo rows of one commune only                    |
 
-The grid route limits bounding-box span and evaluated cell count, and returns
-only cells whose centre is inside Herblay-sur-Seine. Observation queries include
-the 100 m influence margin around the requested viewport.
+Every API accepts `city=<INSEE>`. When it is omitted, the persisted cookie is
+used, then Herblay. An unknown code returns `400 INVALID_CITY`.
+
+The grid route limits bounding-box span and evaluated cell count, uses the
+selected city's bounding box, and returns only cells whose centre is inside that
+commune. Observation queries include the 100 m influence margin around the
+requested viewport. All public boundaries, error messages and statistics follow
+the selected city.
 
 ---
 
@@ -402,6 +453,11 @@ bun run build
 
 The test suite covers:
 
+- city resolution precedence (query > cookie > default) and safe fallback;
+- per-city boundary APIs, activity grids, statistics and moderation queues;
+- rejection of a Saint-Leu report for Herblay and acceptance for Saint-Leu;
+- isolation of two cities' reports in stats and activity;
+- city-scoped demo seed and clear;
 - Lambert-93 reference conversions and round trips;
 - grid alignment, negative coordinates, boundaries and 10 m polygon size;
 - exact influence weights, overlapping sums, determinism, radius rejection and
@@ -423,20 +479,23 @@ Tests use a temporary SQLite file created by `tests/setup.ts`; they never touch
 
 ```text
 src/app/                 Pages and Route Handlers
+src/proxy.ts             City query → cookie synchronisation
 src/components/map/      MapLibre canvas, filters, legend, cell inspection
 src/components/reporting/ Report form and map location picker
 src/components/education/ Interactive influence demonstration
 src/components/admin/    Teacher login and moderation dashboard
 src/components/ui/       Reusable shadcn/ui-style primitives
+src/lib/cities.ts        Client-safe catalog of supported communes
+src/lib/city-selection.ts Server-side query/cookie/default resolution
 src/lib/geo/             Projection, grid, influence, boundary, intensity
-src/lib/db/              Drizzle schema, client and demo seed
+src/lib/db/              Drizzle schema, client and city-scoped demo seed
 src/lib/validation/      Zod input schemas
 src/lib/auth/            Password hashing, sessions, server-side checks
 src/lib/config/          Model constants and environment access
-src/data/                Versioned municipal boundary
+src/data/                Versioned municipal boundaries for all cities
 scripts/                 Migration, seed, boundary, worker and password tools
-tests/                   Spatial, temporal and API tests
-docs/                    French algorithm documentation
+tests/                   Spatial, temporal, city and API tests
+docs/                    French algorithm documentation, English multi-city notes
 ```
 
 The spatial modules do not import React, Next.js or Drizzle. They can be reused
@@ -456,6 +515,8 @@ in a plain TypeScript script or a classroom notebook.
   distance decay beyond the hard influence cutoff.
 - Coarse display cells are averages of the underlying 10 m model, not a separate
   scientific resolution.
+- Cities are separate study areas: a report or an activity cell never crosses a
+  municipal boundary, which can hide real mosquito movement between communes.
 - SQLite and in-process rate limiting target one small server, dozens of
   simultaneous users and hundreds to a few thousand reports.
 - The POC does not implement automated retention, backups or a full audit log.
@@ -469,7 +530,7 @@ These are intentionally **not** implemented in this version:
 - record survey effort, including surveys where no mosquito was seen;
 - optional photo evidence with metadata removal, moderation and retention rules;
 - temporal decay and comparison of periods;
-- additional municipalities with separate study areas;
+- cross-city comparison dashboards and a regional aggregate view;
 - a PostGIS migration if the dataset or concurrency grows;
 - analysis of environmental factors (water, vegetation, temperature);
 - richer classroom exports and anonymised aggregate downloads.

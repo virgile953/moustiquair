@@ -1,27 +1,22 @@
 /**
- * Download, validate and normalise the official municipal boundary of
- * Herblay-sur-Seine (INSEE 95306), then save it as a versioned GeoJSON file.
+ * Download, validate and normalise the official municipal boundaries of every
+ * supported city, then save them as versioned GeoJSON files.
  *
  * Usage: bun run boundary:fetch
  *
- * The application never fetches this geometry at runtime. The generated file
- * is committed to the repository so that the map works offline and remains
- * reproducible.
+ * The application never fetches these geometries at runtime. The generated
+ * files are committed so that the map works offline and stays reproducible.
  */
 
 import { mkdirSync, writeFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { resolve } from "node:path";
 
 import type { MultiPolygon, Polygon, Position } from "geojson";
+import { SUPPORTED_CITIES } from "../src/lib/cities";
 import type { BoundaryGeometry } from "../src/lib/geo/boundary";
 import { lonLatToLambert93 } from "../src/lib/geo/projection";
 
-const INSEE_CODE = "95306";
-const SOURCE_URL = `https://geo.api.gouv.fr/communes/${INSEE_CODE}?format=geojson&geometry=contour`;
-const OUTPUT_PATH = resolve(
-  import.meta.dir,
-  "../src/data/boundary/herblay-sur-seine-95306.v1.json",
-);
+const OUTPUT_DIRECTORY = resolve(import.meta.dir, "../src/data/boundary");
 
 interface ApiFeature {
   type: "Feature";
@@ -94,10 +89,8 @@ function ringAreaSquareMetres(ring: Position[]): number {
     const current = ring[i];
     const next = ring[i + 1];
     if (!current || !next) continue;
-    const currentLon = current[0];
-    const currentLat = current[1];
-    const nextLon = next[0];
-    const nextLat = next[1];
+    const [currentLon, currentLat] = current;
+    const [nextLon, nextLat] = next;
     if (
       currentLon === undefined ||
       currentLat === undefined ||
@@ -123,32 +116,34 @@ function geometryAreaSquareMetres(geometry: BoundaryGeometry): number {
   }, 0);
 }
 
-async function main() {
-  console.log(`Downloading ${SOURCE_URL}`);
-  const response = await fetch(SOURCE_URL);
+async function fetchCity(city: (typeof SUPPORTED_CITIES)[number]): Promise<void> {
+  const sourceUrl = `https://geo.api.gouv.fr/communes/${city.insee}?format=geojson&geometry=contour`;
+  console.log(`\nDownloading ${sourceUrl}`);
+
+  const response = await fetch(sourceUrl);
   if (!response.ok) {
-    throw new Error(`geo.api.gouv.fr returned HTTP ${response.status}`);
+    throw new Error(`geo.api.gouv.fr returned HTTP ${response.status} for ${city.insee}`);
   }
 
   const payload = (await response.json()) as ApiFeature;
-  if (payload.type !== "Feature" || payload.properties.code !== INSEE_CODE) {
-    throw new Error("Unexpected API response: not the requested commune.");
+  if (payload.type !== "Feature" || payload.properties.code !== city.insee) {
+    throw new Error(`Unexpected API response for INSEE ${city.insee}`);
   }
 
   const geometry = normaliseGeometry(payload.geometry);
   const areaKm2 = geometryAreaSquareMetres(geometry) / 1_000_000;
-  if (areaKm2 < 1 || areaKm2 > 100) {
-    throw new Error(`Implausible commune area: ${areaKm2.toFixed(2)} km²`);
+  if (areaKm2 < 0.5 || areaKm2 > 100) {
+    throw new Error(`Implausible area for ${city.name}: ${areaKm2.toFixed(2)} km²`);
   }
 
   const feature = {
     type: "Feature" as const,
     properties: {
-      name: String(payload.properties.nom ?? "Herblay-sur-Seine"),
-      insee: INSEE_CODE,
-      department: String(payload.properties.codeDepartement ?? "95"),
-      region: String(payload.properties.codeRegion ?? "11"),
-      source: SOURCE_URL,
+      name: city.name,
+      insee: city.insee,
+      department: city.departmentCode,
+      region: "11",
+      source: sourceUrl,
       license: "Etalab 2.0 — geo.api.gouv.fr",
       retrievedAt: new Date().toISOString(),
       version: "1.0.0",
@@ -156,12 +151,20 @@ async function main() {
     geometry,
   };
 
-  mkdirSync(dirname(OUTPUT_PATH), { recursive: true });
-  writeFileSync(OUTPUT_PATH, `${JSON.stringify(feature, null, 2)}\n`, "utf8");
+  const outputPath = resolve(OUTPUT_DIRECTORY, `${city.slug}-${city.insee}.v1.json`);
+  mkdirSync(OUTPUT_DIRECTORY, { recursive: true });
+  writeFileSync(outputPath, `${JSON.stringify(feature, null, 2)}\n`, "utf8");
 
   console.log(`Boundary geometry: ${geometry.type}`);
   console.log(`Area: ${areaKm2.toFixed(2)} km²`);
-  console.log(`Written to ${OUTPUT_PATH}`);
+  console.log(`Written to ${outputPath}`);
+}
+
+async function main() {
+  for (const city of SUPPORTED_CITIES) {
+    await fetchCity(city);
+  }
+  console.log(`\n${SUPPORTED_CITIES.length} boundaries downloaded and validated.`);
 }
 
 await main();

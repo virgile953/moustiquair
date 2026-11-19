@@ -1,30 +1,39 @@
 /**
  * Reproducible synthetic dataset for demonstrations and classroom tests.
  *
- * All records are marked `isDemo = true`. Seeding always deletes the previous
- * demo dataset first, so the operation is safe and idempotent: real reports
- * are never touched.
+ * All records are marked `isDemo = true`. Seeding a city deletes only that
+ * city's previous demo dataset, so the operation is safe and idempotent: real
+ * reports and other cities are never touched.
  *
  * Positions are generated in Lambert-93 so that the spatial spread is
  * expressed in metres, then converted back to GPS for storage.
  */
 
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
+
+import { type City, DEFAULT_CITY, SUPPORTED_CITIES } from "../cities";
 import type { MosquitoCount, ReporterConfidence } from "../config/model";
 import { isInsideBoundary } from "../geo/boundary";
-import { HERBLAY_BOUNDARY_BBOX, HERBLAY_BOUNDARY_GEOMETRY } from "../geo/herblay-boundary";
+import { getCityBoundaryGeometry, getCityBoundingBox } from "../geo/city-boundaries";
 import { lambert93ToLonLat, lonLatToLambert93 } from "../geo/projection";
+import type { LonLat } from "../geo/types";
 import { addDaysToDateKey, parisDateKey, parisWallTimeToUtc } from "../time";
 import { getDb } from "./client";
 import { sightings } from "./schema";
 
-/** Five deliberate hotspots, all verified inside the commune. */
-const HOTSPOTS: { longitude: number; latitude: number; weight: number; spread: number }[] = [
-  { longitude: 2.15892, latitude: 48.99116, weight: 1.1, spread: 58 }, // south
-  { longitude: 2.13914, latitude: 48.99919, weight: 1.0, spread: 52 }, // west
-  { longitude: 2.15233, latitude: 49.00321, weight: 1.3, spread: 64 }, // centre
-  { longitude: 2.16552, latitude: 49.00723, weight: 0.9, spread: 55 }, // north-east
-  { longitude: 2.13255, latitude: 49.01125, weight: 0.7, spread: 48 }, // north-west
+interface DemoHotspot {
+  longitude: number;
+  latitude: number;
+  spread: number;
+}
+
+/** Five curated hotspots for Herblay, kept stable for the original demo. */
+const HERBLAY_HOTSPOTS: DemoHotspot[] = [
+  { longitude: 2.15892, latitude: 48.99116, spread: 58 }, // south
+  { longitude: 2.13914, latitude: 48.99919, spread: 52 }, // west
+  { longitude: 2.15233, latitude: 49.00321, spread: 64 }, // centre
+  { longitude: 2.16552, latitude: 49.00723, spread: 55 }, // north-east
+  { longitude: 2.13255, latitude: 49.01125, spread: 48 }, // north-west
 ];
 
 const NOTES = [
@@ -61,38 +70,79 @@ function pick<T>(random: () => number, values: readonly T[]): T {
   return value;
 }
 
-function randomPointInside(random: () => number): { longitude: number; latitude: number } {
+function randomPointInside(random: () => number, city: City): LonLat {
+  const boundary = getCityBoundaryGeometry(city.insee);
+  const bbox = getCityBoundingBox(city.insee);
+  if (!boundary || !bbox) throw new Error(`No boundary found for ${city.name}.`);
+
   for (let attempt = 0; attempt < 200; attempt += 1) {
-    const longitude =
-      HERBLAY_BOUNDARY_BBOX.minLon +
-      random() * (HERBLAY_BOUNDARY_BBOX.maxLon - HERBLAY_BOUNDARY_BBOX.minLon);
-    const latitude =
-      HERBLAY_BOUNDARY_BBOX.minLat +
-      random() * (HERBLAY_BOUNDARY_BBOX.maxLat - HERBLAY_BOUNDARY_BBOX.minLat);
-    if (isInsideBoundary(longitude, latitude, HERBLAY_BOUNDARY_GEOMETRY)) {
+    const longitude = bbox.minLon + random() * (bbox.maxLon - bbox.minLon);
+    const latitude = bbox.minLat + random() * (bbox.maxLat - bbox.minLat);
+    if (isInsideBoundary(longitude, latitude, boundary)) {
       return { longitude, latitude };
     }
   }
-  throw new Error("Unable to generate a demo point inside Herblay-sur-Seine.");
+  throw new Error(`Unable to generate a demo point inside ${city.name}.`);
 }
 
 function gaussianPointAround(
   random: () => number,
-  center: { longitude: number; latitude: number },
+  city: City,
+  center: LonLat,
   spreadMeters: number,
-): { longitude: number; latitude: number } | null {
+): LonLat | null {
+  const boundary = getCityBoundaryGeometry(city.insee);
+  if (!boundary) throw new Error(`No boundary found for ${city.name}.`);
   const projected = lonLatToLambert93(center);
+
   for (let attempt = 0; attempt < 40; attempt += 1) {
     const point = {
       x: projected.x + gaussian(random) * spreadMeters,
       y: projected.y + gaussian(random) * spreadMeters,
     };
     const { longitude, latitude } = lambert93ToLonLat(point);
-    if (isInsideBoundary(longitude, latitude, HERBLAY_BOUNDARY_GEOMETRY)) {
+    if (isInsideBoundary(longitude, latitude, boundary)) {
       return { longitude, latitude };
     }
   }
   return null;
+}
+
+/**
+ * Herblay keeps its hand-placed hotspots. Other communes get five deterministic
+ * clusters around their official centre, which produces a convincing demo
+ * without pretending that any real neighbourhood is infested.
+ */
+function buildHotspots(city: City, random: () => number): DemoHotspot[] {
+  if (city.insee === "95306") return HERBLAY_HOTSPOTS;
+
+  const boundary = getCityBoundaryGeometry(city.insee);
+  if (!boundary) throw new Error(`No boundary found for ${city.name}.`);
+  const center = lonLatToLambert93(city.center);
+  const offsets = [
+    { x: 0, y: 0 },
+    { x: 480, y: 160 },
+    { x: -420, y: 300 },
+    { x: 260, y: -430 },
+    { x: -380, y: -280 },
+  ];
+  const spreads = [58, 52, 64, 55, 48];
+  const hotspots: DemoHotspot[] = [];
+
+  for (let index = 0; index < offsets.length; index += 1) {
+    const offset = offsets[index];
+    if (!offset) continue;
+    const { longitude, latitude } = lambert93ToLonLat({
+      x: center.x + offset.x,
+      y: center.y + offset.y,
+    });
+    const point = isInsideBoundary(longitude, latitude, boundary)
+      ? { longitude, latitude }
+      : randomPointInside(random, city);
+    hotspots.push({ ...point, spread: spreads[index] ?? 55 });
+  }
+
+  return hotspots;
 }
 
 function randomDayOffset(random: () => number, maxDays = 90): number {
@@ -116,22 +166,25 @@ export interface DemoSeedResult {
   hotspots: number;
 }
 
-export function clearDemoData(): number {
+/** Remove demo rows, optionally only for one commune. */
+export function clearDemoData(cityInsee?: string): number {
   const db = getDb();
-  const before = db
-    .select({ id: sightings.id })
-    .from(sightings)
-    .where(eq(sightings.isDemo, true))
-    .all().length;
-  db.delete(sightings).where(eq(sightings.isDemo, true)).run();
+  const condition = cityInsee
+    ? and(eq(sightings.isDemo, true), eq(sightings.cityInsee, cityInsee))
+    : eq(sightings.isDemo, true);
+
+  const before = db.select({ id: sightings.id }).from(sightings).where(condition).all().length;
+  db.delete(sightings).where(condition).run();
   return before;
 }
 
-export function seedDemoData(now: Date = new Date()): DemoSeedResult {
+export function seedDemoData(city: City = DEFAULT_CITY, now: Date = new Date()): DemoSeedResult {
   const db = getDb();
-  const random = mulberry32(20260921);
+  const hotspots = buildHotspots(city, mulberry32(20260921 + Number(city.insee)));
+  // Keep the original Herblay sequence so its curated map does not change.
+  const random = mulberry32(city.insee === "95306" ? 20260921 : 20260921 + Number(city.insee));
 
-  clearDemoData();
+  clearDemoData(city.insee);
 
   const mosquitoCounts: readonly MosquitoCount[] = [
     "1",
@@ -164,7 +217,8 @@ export function seedDemoData(now: Date = new Date()): DemoSeedResult {
 
     index += 1;
     rows.push({
-      id: `demo-${String(index).padStart(3, "0")}`,
+      id: `demo-${city.insee}-${String(index).padStart(3, "0")}`,
+      cityInsee: city.insee,
       longitude,
       latitude,
       projectedX: projected.x,
@@ -183,36 +237,38 @@ export function seedDemoData(now: Date = new Date()): DemoSeedResult {
 
   // 1. Hotspots: 92 approved reports, with 18 or 19 per hotspot.
   const hotspotCounts = [19, 18, 20, 18, 17];
-  for (let hotspotIndex = 0; hotspotIndex < HOTSPOTS.length; hotspotIndex += 1) {
-    const hotspot = HOTSPOTS[hotspotIndex];
+  for (let hotspotIndex = 0; hotspotIndex < hotspots.length; hotspotIndex += 1) {
+    const hotspot = hotspots[hotspotIndex];
     if (!hotspot) continue;
     const count = hotspotCounts[hotspotIndex] ?? 18;
     for (let i = 0; i < count; i += 1) {
-      const point = gaussianPointAround(random, hotspot, hotspot.spread);
+      const point = gaussianPointAround(random, city, hotspot, hotspot.spread);
       if (!point) continue;
       addSighting(point.longitude, point.latitude, "approved", randomDayOffset(random));
     }
   }
 
-  // 2. Isolated approved observations spread across the town.
+  // 2. Isolated approved observations spread across the commune.
   for (let i = 0; i < 24; i += 1) {
-    const point = randomPointInside(random);
+    const point = randomPointInside(random, city);
     addSighting(point.longitude, point.latitude, "approved", randomDayOffset(random));
   }
 
   // 3. Pending reports for practising moderation.
   for (let i = 0; i < 10; i += 1) {
-    const hotspot = HOTSPOTS[i % HOTSPOTS.length];
+    const hotspot = hotspots[i % hotspots.length];
     if (!hotspot) continue;
     const point =
-      random() < 0.7 ? gaussianPointAround(random, hotspot, 220) : randomPointInside(random);
+      random() < 0.7
+        ? gaussianPointAround(random, city, hotspot, 220)
+        : randomPointInside(random, city);
     if (!point) continue;
     addSighting(point.longitude, point.latitude, "pending", Math.floor(random() * 12));
   }
 
   // 4. A few rejected reports demonstrate that moderation works.
   for (let i = 0; i < 3; i += 1) {
-    const point = randomPointInside(random);
+    const point = randomPointInside(random, city);
     addSighting(point.longitude, point.latitude, "rejected", 5 + Math.floor(random() * 40));
   }
 
@@ -227,6 +283,15 @@ export function seedDemoData(now: Date = new Date()): DemoSeedResult {
     approved: rows.filter((row) => row.status === "approved").length,
     pending: rows.filter((row) => row.status === "pending").length,
     rejected: rows.filter((row) => row.status === "rejected").length,
-    hotspots: HOTSPOTS.length,
+    hotspots: hotspots.length,
   };
+}
+
+/** Seed every supported commune; used by `bun run db:seed`. */
+export function seedAllDemoData(now: Date = new Date()): Map<string, DemoSeedResult> {
+  const results = new Map<string, DemoSeedResult>();
+  for (const city of SUPPORTED_CITIES) {
+    results.set(city.insee, seedDemoData(city, now));
+  }
+  return results;
 }

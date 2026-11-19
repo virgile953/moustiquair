@@ -3,7 +3,7 @@
  *
  * Why project coordinates?
  * GPS gives longitude and latitude in degrees. A degree of longitude is about
- * 111 km at the equator but only about 73 km at the latitude of Herblay. Doing
+ * 111 km at the equator but only about 73 km at the latitude of the Val-d'Oise. Doing
  * `sqrt(dx² + dy²)` directly on degrees would therefore produce a distorted
  * distance. Lambert-93 (EPSG:2154) is an official French projection whose unit
  * is the metre, which makes distance and grid calculations honest.

@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { type City, withCityQuery } from "@/lib/cities";
 import { PERIODS, type PeriodValue } from "@/lib/config/model";
 import { formatActivityScore, formatPercent, getActivityLevelLabel } from "@/lib/geo/intensity";
 import { periodLabel } from "@/lib/time";
@@ -26,6 +27,7 @@ import { cn } from "@/lib/utils";
 import type { ActivityLoadState, MapStats, SelectedCell } from "./types";
 
 interface MapSidebarProps {
+  city: City;
   period: PeriodValue;
   onPeriodChange: (period: PeriodValue) => void;
   overlayEnabled: boolean;
@@ -158,6 +160,7 @@ function CellDetails({
 }
 
 export function MapSidebar({
+  city,
   period,
   onPeriodChange,
   overlayEnabled,
@@ -179,9 +182,9 @@ export function MapSidebar({
           <p className="text-[0.66rem] font-bold tracking-[0.14em] text-primary uppercase">
             Carte d&apos;activité
           </p>
-          <h2 className="mt-1 text-lg font-extrabold tracking-tight">Herblay-sur-Seine</h2>
+          <h2 className="mt-1 text-lg font-extrabold tracking-tight">{city.name}</h2>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            Val-d&apos;Oise · grille scientifique de 10 m
+            {city.department} · INSEE {city.insee} · grille scientifique de 10 m
           </p>
         </div>
         {onClose ? (
@@ -232,7 +235,7 @@ export function MapSidebar({
               <span>
                 Touchez un carré coloré pour lire son indice, ou consultez la{" "}
                 <Link
-                  href="/comprendre"
+                  href={withCityQuery("/comprendre", city.insee)}
                   className="font-semibold text-brand-700 underline underline-offset-2"
                 >
                   méthode complète
@@ -342,10 +345,10 @@ export function MapSidebar({
         <div className="flex items-center justify-between gap-3 pb-1">
           <Badge variant="outline">POC pédagogique</Badge>
           <Link
-            href="/statistiques"
+            href={withCityQuery("/statistiques", city.insee)}
             className="text-[0.7rem] font-semibold text-brand-700 underline underline-offset-2"
           >
-            Voir les statistiques
+            Voir les statistiques de {city.name}
           </Link>
         </div>
       </div>

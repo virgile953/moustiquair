@@ -26,6 +26,7 @@ import { useCallback, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { AdminSighting, AdminSightingList, AdminStatusFilter } from "@/lib/admin-data";
+import { type City, withCityQuery } from "@/lib/cities";
 import {
   MOSQUITO_COUNT_OPTIONS,
   REPORTER_CONFIDENCE_OPTIONS,
@@ -45,6 +46,7 @@ interface DashboardStats {
 }
 
 interface AdminDashboardProps {
+  city: City;
   initialList: AdminSightingList;
   initialStats: DashboardStats;
   sessionExpiresAt: string;
@@ -97,6 +99,7 @@ function Metric({
 }
 
 export function AdminDashboard({
+  city,
   initialList,
   initialStats,
   sessionExpiresAt,
@@ -116,9 +119,12 @@ export function AdminDashboard({
       setLoading(true);
       setError(null);
       try {
-        const response = await fetch(`/api/admin/sightings?status=${nextFilter}`, {
-          cache: "no-store",
-        });
+        const response = await fetch(
+          `/api/admin/sightings?status=${nextFilter}&city=${city.insee}`,
+          {
+            cache: "no-store",
+          },
+        );
         if (response.status === 401) {
           router.refresh();
           return;
@@ -134,19 +140,21 @@ export function AdminDashboard({
         setLoading(false);
       }
     },
-    [router],
+    [router, city.insee],
   );
 
   const loadStats = useCallback(async () => {
     try {
-      const response = await fetch("/api/stats?period=30&view=full", { cache: "no-store" });
+      const response = await fetch(`/api/stats?period=30&view=full&city=${city.insee}`, {
+        cache: "no-store",
+      });
       if (!response.ok) return;
       const data = (await response.json()) as DashboardStats;
       setStats(data);
     } catch {
       // Statistics are secondary; the moderation list remains usable.
     }
-  }, []);
+  }, [city.insee]);
 
   const refreshAll = useCallback(
     async (nextFilter: AdminStatusFilter = filter) => {
@@ -165,14 +173,17 @@ export function AdminDashboard({
     setError(null);
     setNotice(null);
     try {
-      const response = await fetch(`/api/admin/sightings/${encodeURIComponent(sighting.id)}`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          "x-moustiquair-csrf": "1",
+      const response = await fetch(
+        `/api/admin/sightings/${encodeURIComponent(sighting.id)}?city=${city.insee}`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            "x-moustiquair-csrf": "1",
+          },
+          body: JSON.stringify({ status }),
         },
-        body: JSON.stringify({ status }),
-      });
+      );
       const body = (await response.json().catch(() => null)) as {
         error?: { message?: string };
       } | null;
@@ -199,7 +210,7 @@ export function AdminDashboard({
   const handleDemoSeed = async () => {
     if (
       !window.confirm(
-        "Restaurer le jeu de démonstration ? Les observations synthétiques existantes seront remplacées. Les signalements réels ne sont pas modifiés.",
+        `Restaurer le jeu de démonstration de ${city.name} ? Les observations synthétiques existantes de cette commune seront remplacées. Les signalements réels ne sont pas modifiés.`,
       )
     ) {
       return;
@@ -208,7 +219,7 @@ export function AdminDashboard({
     setError(null);
     setNotice(null);
     try {
-      const response = await fetch("/api/admin/demo/seed", {
+      const response = await fetch(`/api/admin/demo/seed?city=${city.insee}`, {
         method: "POST",
         headers: { "x-moustiquair-csrf": "1" },
       });
@@ -222,7 +233,7 @@ export function AdminDashboard({
         );
       }
       setNotice(
-        `Jeu de démonstration restauré${body?.inserted ? ` (${body.inserted} observations)` : ""}.`,
+        `Jeu de démonstration de ${city.name} restauré${body?.inserted ? ` (${body.inserted} observations)` : ""}.`,
       );
       await refreshAll();
     } catch (demoError) {
@@ -239,7 +250,7 @@ export function AdminDashboard({
   const handleDemoClear = async () => {
     if (
       !window.confirm(
-        "Supprimer toutes les observations de démonstration ? Les signalements réels seront conservés.",
+        `Supprimer les observations de démonstration de ${city.name} ? Les signalements réels et les autres communes seront conservés.`,
       )
     ) {
       return;
@@ -248,7 +259,7 @@ export function AdminDashboard({
     setError(null);
     setNotice(null);
     try {
-      const response = await fetch("/api/admin/demo", {
+      const response = await fetch(`/api/admin/demo?city=${city.insee}`, {
         method: "DELETE",
         headers: { "x-moustiquair-csrf": "1" },
       });
@@ -261,7 +272,7 @@ export function AdminDashboard({
           body?.error?.message ?? "Les données de démonstration n'ont pas pu être supprimées.",
         );
       }
-      setNotice(`${body?.removed ?? 0} observations de démonstration supprimées.`);
+      setNotice(`${body?.removed ?? 0} observations de démonstration supprimées à ${city.name}.`);
       await refreshAll();
     } catch (demoError) {
       setError(
@@ -298,26 +309,29 @@ export function AdminDashboard({
                 <ShieldCheck className="size-3" aria-hidden="true" />
                 Espace enseignant
               </Badge>
-              <Badge variant="outline">Herblay-sur-Seine · 95306</Badge>
+              <Badge variant="outline">
+                {city.name} · {city.insee}
+              </Badge>
             </div>
             <h1 className="mt-3 text-3xl font-extrabold tracking-[-0.035em] sm:text-4xl">
               Modération et pilotage
             </h1>
             <p className="mt-1.5 max-w-2xl text-sm leading-relaxed text-muted-foreground">
-              Validez les observations, inspectez leur position privée et gérez le jeu de
-              démonstration. Les signalements en attente ne sont jamais publiés.
+              Validez les observations de {city.name}, inspectez leur position privée et gérez le
+              jeu de démonstration de cette commune. Les signalements en attente ne sont jamais
+              publiés.
             </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
             <Button asChild variant="outline" size="sm">
-              <Link href="/">
+              <Link href={withCityQuery("/", city.insee)}>
                 <ArrowLeft />
                 Carte publique
               </Link>
             </Button>
             <Button asChild size="sm">
-              <Link href="/admin/carte">
+              <Link href={withCityQuery("/admin/carte", city.insee)}>
                 <MapPinned />
                 Vue complète
               </Link>
@@ -390,8 +404,8 @@ export function AdminDashboard({
                   File de modération
                 </h2>
                 <p className="text-xs text-muted-foreground">
-                  {list.total} signalement{list.total > 1 ? "s" : ""} dans ce filtre · positions
-                  visibles uniquement par l&apos;enseignant.
+                  {list.total} signalement{list.total > 1 ? "s" : ""} à {city.name} dans ce filtre ·
+                  positions visibles uniquement par l&apos;enseignant.
                 </p>
               </div>
               <Button
@@ -452,9 +466,13 @@ export function AdminDashboard({
                   <div className="mx-auto flex size-11 items-center justify-center rounded-full bg-muted text-muted-foreground">
                     <CheckCircle2 className="size-5" aria-hidden="true" />
                   </div>
-                  <p className="mt-3 text-sm font-bold">Aucun signalement dans ce filtre</p>
+                  <p className="mt-3 text-sm font-bold">
+                    Aucun signalement à {city.name} dans ce filtre
+                  </p>
                   <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                    La file est vide. Les nouvelles observations apparaîtront ici.
+                    La file de {city.name} est vide. Les nouvelles observations de cette commune
+                    apparaîtront ici. Changez de commune dans l&apos;en-tête pour voir les autres
+                    files.
                   </p>
                 </div>
               ) : null}
@@ -554,7 +572,7 @@ export function AdminDashboard({
                       ) : null}
                       <Button asChild size="sm" variant="ghost">
                         <Link
-                          href={`/admin/carte?lat=${sighting.latitude}&lon=${sighting.longitude}`}
+                          href={`/admin/carte?lat=${sighting.latitude}&lon=${sighting.longitude}&city=${city.insee}`}
                         >
                           <MapPin />
                           Voir la position
@@ -579,9 +597,9 @@ export function AdminDashboard({
                 Jeu de démonstration
               </h2>
               <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-                Le jeu synthétique est reproductible et couvre les 90 derniers jours. Il contient{" "}
-                {stats.demoApprovedInPeriod} observations validées sur 30 jours
-                {stats.demoActive ? "" : " (actuellement absent)"}.
+                Le jeu synthétique de {city.name} est reproductible et couvre les 90 derniers jours.
+                Il contient {stats.demoApprovedInPeriod} observations validées sur 30 jours
+                {stats.demoActive ? "" : " (actuellement absent pour cette commune)"}.
               </p>
               <div className="mt-3 flex flex-col gap-2">
                 <Button
@@ -601,12 +619,12 @@ export function AdminDashboard({
                   disabled={demoBusy}
                 >
                   {demoBusy ? <Loader2 className="animate-spin" /> : <Trash2 />}
-                  Supprimer les données démo
+                  Supprimer les données démo de {city.name}
                 </Button>
               </div>
               <p className="mt-3 text-[0.65rem] leading-relaxed text-muted-foreground">
-                Ces actions ne touchent jamais aux signalements réels. Toutes les lignes
-                synthétiques portent <span className="font-mono">isDemo = true</span>.
+                Ces actions ne touchent jamais aux signalements réels des autres communes. Toutes
+                les lignes synthétiques portent <span className="font-mono">isDemo = true</span>.
               </p>
             </section>
 
@@ -636,13 +654,13 @@ export function AdminDashboard({
               <h2 className="text-sm font-bold text-brand-900">Deux niveaux de lecture</h2>
               <div className="mt-3 flex flex-col gap-2">
                 <Button asChild variant="outline" size="sm" className="justify-start bg-card">
-                  <Link href="/">
+                  <Link href={withCityQuery("/", city.insee)}>
                     <Activity />
                     Carte publique filtrée
                   </Link>
                 </Button>
                 <Button asChild size="sm" className="justify-start">
-                  <Link href="/admin/carte">
+                  <Link href={withCityQuery("/admin/carte", city.insee)}>
                     <MapPinned />
                     Carte complète enseignante
                   </Link>

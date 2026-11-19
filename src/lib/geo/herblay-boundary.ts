@@ -1,23 +1,34 @@
 /**
- * The official study area, loaded from the versioned GeoJSON file.
+ * Backwards-compatible exports for the original Herblay study area.
  *
- * Importing JSON keeps the boundary available both in server code and in the
- * browser (for immediate validation feedback while placing a report).
+ * New code should use `getCityBoundary()` from `city-boundaries.ts` and the
+ * selected city from `src/lib/cities.ts`.
  */
 
-import boundaryFile from "../../data/boundary/herblay-sur-seine-95306.v1.json";
 import type { BoundaryFeature } from "./boundary";
 import { boundaryBoundingBox } from "./boundary";
+import { getCityBoundary } from "./city-boundaries";
+import type { LonLat } from "./types";
 
-export const HERBLAY_BOUNDARY = boundaryFile as unknown as BoundaryFeature;
+const HERBLAY_BOUNDARY_VALUE = getCityBoundary("95306");
+if (!HERBLAY_BOUNDARY_VALUE) {
+  throw new Error("The Herblay-sur-Seine boundary file is missing.");
+}
+
+export const HERBLAY_BOUNDARY: BoundaryFeature = HERBLAY_BOUNDARY_VALUE;
 export const HERBLAY_BOUNDARY_GEOMETRY = HERBLAY_BOUNDARY.geometry;
 export const HERBLAY_BOUNDARY_BBOX = boundaryBoundingBox(HERBLAY_BOUNDARY_GEOMETRY);
 
-export const STUDY_AREA = {
+export const STUDY_AREA: {
+  name: string;
+  insee: string;
+  department: string;
+  region: string;
+  center: LonLat;
+} = {
   name: "Herblay-sur-Seine",
   insee: "95306",
   department: "Val-d'Oise",
   region: "Île-de-France",
-  /** Approximate centre used as a fallback before the boundary is fitted. */
   center: { longitude: 2.1556, latitude: 49.0052 },
-} as const;
+};
